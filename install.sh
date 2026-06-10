@@ -27,7 +27,7 @@ set -euo pipefail
 # ── config ────────────────────────────────────────────────────────────────
 # The public distribution copy of this script bakes a release-wheel URL here so
 # `curl … | bash` needs no env. Empty in the source repo (which clones instead).
-DEFAULT_WHEEL_URL="${MARGINALIA_DEFAULT_WHEEL_URL:-https://github.com/OktoLabsAI/marginalia-dist/releases/download/v0.0.8/marginalia-0.0.8-py3-none-any.whl}"
+DEFAULT_WHEEL_URL="${MARGINALIA_DEFAULT_WHEEL_URL:-https://github.com/OktoLabsAI/marginalia-dist/releases/download/v0.0.9/marginalia-0.0.9-py3-none-any.whl}"
 EXTRAS="embeddings,ladybug,mcp,litellm"
 PY_VERSION="3.12"
 REPO="${MARGINALIA_REPO:-git@github.com:OktoLabsAI/marginalia.git}"
@@ -223,6 +223,12 @@ else
   else
     step "Starting the Marginalia daemon (UI/REST :7777 + MCP :8201)"
   fi
+  # Safety net: many local OpenAI-compatible LLM/embedding servers are keyless,
+  # but litellm still requires SOME api_key or it errors "Missing credentials".
+  # The app sends a placeholder for custom endpoints, but we also give the daemon
+  # a default key in its environment so every path (incl. remote embeddings) is
+  # covered. A real key already in the environment is never overwritten.
+  export OPENAI_API_KEY="${OPENAI_API_KEY:-sk-no-key-required}"
   marginalia serve --daemon --vault "${SERVE_VAULT}"
   info "waiting for the server to come up ..."
   up=""
