@@ -244,25 +244,29 @@ else
 fi
 
 # ── 7. wire Claude Code ───────────────────────────────────────────────────
-CONNECT_URL="${MCP_URL}?vault=${VAULT_LABEL}"
+# Register at USER scope (available in every project) with NO ?vault= pin, so it
+# defaults to the daemon's active vault. Per-project contextual routing is done by
+# dropping a .mcp.json with ?vault=<that project's vault> into the project folder.
+GLOBAL_URL="${MCP_URL}"
+PROJECT_EXAMPLE="{\"mcpServers\":{\"marginalia\":{\"type\":\"http\",\"url\":\"${MCP_URL}?vault=${VAULT_LABEL}\"}}}"
 if [ -n "${UPGRADE}" ]; then
   step "Update mode — Claude Code wiring left as-is"
-  info "already registered; connect URL is ${CONNECT_URL}"
 elif [ "${MARGINALIA_NO_MCP:-}" = "1" ]; then
   step "Skipping Claude Code wiring (MARGINALIA_NO_MCP=1)"
-  info "register later with: claude mcp add marginalia --transport http \"${CONNECT_URL}\""
+  info "register later with: claude mcp add --scope user marginalia --transport http \"${GLOBAL_URL}\""
 elif command -v claude >/dev/null 2>&1; then
-  step "Registering the MCP server with Claude Code"
-  if claude mcp add marginalia --transport http "${CONNECT_URL}" 2>/dev/null; then
-    info "added 'marginalia' (4 tools: ask · explore · remember · init_vault)"
+  step "Registering the MCP server with Claude Code (user scope, all projects)"
+  if claude mcp add --scope user marginalia --transport http "${GLOBAL_URL}" 2>/dev/null; then
+    info "added 'marginalia' (4 tools: ask · explore · remember · init_vault) → active vault"
+    info "per-project vault: drop a .mcp.json with ?vault=<name> in that project folder"
   else
     warn "couldn't add automatically (already registered?). Run manually if needed:"
-    info "claude mcp add marginalia --transport http \"${CONNECT_URL}\""
+    info "claude mcp add --scope user marginalia --transport http \"${GLOBAL_URL}\""
   fi
 else
   step "Claude Code CLI not found"
   info "once 'claude' is on PATH, run:"
-  info "claude mcp add marginalia --transport http \"${CONNECT_URL}\""
+  info "claude mcp add --scope user marginalia --transport http \"${GLOBAL_URL}\""
 fi
 
 # ── done ──────────────────────────────────────────────────────────────────
@@ -271,8 +275,9 @@ if [ -n "${UPGRADE}" ]; then
 else
   printf "\n%s🎉 Marginalia is ready.%s\n" "$B$G" "$X"
 fi
-info "vault   : ${SERVE_VAULT}"
-info "web UI  : ${REST_URL}"
-info "MCP url : ${CONNECT_URL}"
-info "stop    : marginalia stop --vault ${VAULT_LABEL}"
+info "vault    : ${SERVE_VAULT}"
+info "web UI   : ${REST_URL}"
+info "MCP url  : ${GLOBAL_URL}  (active vault; all projects)"
+info "per-proj : add .mcp.json → ${PROJECT_EXAMPLE}"
+info "stop     : marginalia stop --vault ${VAULT_LABEL}"
 info "Try in Claude Code: \"remember this note: ...\" then \"ask Marginalia about ...\""
