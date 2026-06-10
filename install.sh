@@ -58,6 +58,41 @@ prompt() { # prompt <var> <message> [default]
   printf -v "$__var" '%s' "${__ans:-$__def}"
 }
 
+# Query an OpenAI-compatible endpoint for its models and let the user pick one by
+# number, or type a name. Sets the named variable. Falls back to a free-text
+# prompt when the endpoint can't be listed (unreachable / no /v1/models).
+pick_model() { # pick_model <var> <api_base>
+  # NOTE: use __sel (not __ans) for the selection — prompt() has its own local
+  # __ans, and `printf -v __ans` there would write to prompt's local, not ours.
+  local __var="$1" __base="${2%/}" __json="" __ids="" __sel="" __n=0
+  __json="$(curl -fsS -m 8 "${__base}/models" 2>/dev/null || true)"
+  if [ -n "${__json}" ] && command -v python3 >/dev/null 2>&1; then
+    __ids="$(printf '%s' "${__json}" | python3 -c 'import sys,json
+try: d=json.load(sys.stdin)
+except Exception: sys.exit(0)
+data=d.get("data") if isinstance(d,dict) else None
+[print(m["id"]) for m in (data or []) if isinstance(m,dict) and m.get("id")]' 2>/dev/null)"
+  fi
+  if [ -n "${__ids}" ]; then
+    info "models available at ${__base}:"
+    local IFS=$'\n'; local __arr=(); local __m
+    for __m in ${__ids}; do __arr+=("$__m"); done
+    unset IFS
+    __n=0
+    for __m in "${__arr[@]}"; do __n=$((__n+1)); printf "      %s%2d)%s %s\n" "$B" "$__n" "$X" "$__m" > /dev/tty 2>/dev/null || printf "      %2d) %s\n" "$__n" "$__m"; done
+    prompt __sel "  Pick a number, or type a model name:" "1"
+    case "${__sel}" in
+      ''|*[!0-9]*) printf -v "$__var" '%s' "${__sel}" ;;  # non-numeric → typed name
+      *) if [ "${__sel}" -ge 1 ] && [ "${__sel}" -le "${#__arr[@]}" ] 2>/dev/null; then
+           printf -v "$__var" '%s' "${__arr[$((__sel-1))]}"
+         else printf -v "$__var" '%s' "${__sel}"; fi ;;
+    esac
+  else
+    warn "couldn't list models from ${__base}/models — enter the name manually"
+    prompt "$__var" "  LLM model name:" ""
+  fi
+}
+
 printf "%s\n" "${B}Marginalia installer${X} — local-first knowledge graph for Claude Code"
 
 # ── 1. uv ─────────────────────────────────────────────────────────────────
@@ -172,7 +207,8 @@ else
     info "Point Marginalia at any OpenAI-compatible endpoint (LM Studio, Ollama, llama.cpp, vLLM, a remote box...)."
     info "Press Enter to skip — explore() works now; add the block later to enable ask()/remember()."
     [ -z "${API_BASE}" ] && prompt API_BASE "  LLM api_base URL:" "http://localhost:1234/v1"
-    [ -z "${MODEL}" ]    && prompt MODEL    "  LLM model name:"  ""
+    # List the endpoint's models (pick by number) instead of blind free-text.
+    [ -z "${MODEL}" ] && [ -n "${API_BASE}" ] && pick_model MODEL "${API_BASE}"
   fi
   if [ -n "${API_BASE}" ] && [ -n "${MODEL}" ]; then
     cat >> "${YAML}" <<EOF
