@@ -4,10 +4,16 @@ One-shot installer for [Marginalia](https://github.com/OktoLabsAI/marginalia), a
 local-first knowledge graph you can drive from Claude Code (MCP), the CLI, or as
 a Python library.
 
-## Install
+## Install On macOS Or Linux
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/OktoLabsAI/marginalia-dist/main/install.sh | bash
+```
+
+## Install On Windows
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/OktoLabsAI/marginalia-dist/main/install.ps1 | iex"
 ```
 
 This takes a fresh machine from zero to a running daemon wired into Claude Code:
@@ -21,7 +27,7 @@ This takes a fresh machine from zero to a running daemon wired into Claude Code:
 
 ## Requirements
 
-- macOS or Linux, `curl`, `bash`
+- macOS or Linux with `curl` and `bash`, or Windows with PowerShell
 - An OpenAI-compatible LLM endpoint for `ask` / `remember` (embeddings run locally, no setup)
 
 ## Options
@@ -38,11 +44,19 @@ Everything is overridable by environment variable — useful under `curl … | b
 | `MARGINALIA_NO_SERVE` | — | `1` = install + configure only |
 | `MARGINALIA_NO_MCP` | — | `1` = don't run `claude mcp add` |
 
-Example, fully non-interactive:
+Example, fully non-interactive on macOS/Linux:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/OktoLabsAI/marginalia-dist/main/install.sh \
   | MARGINALIA_LLM_API_BASE=http://localhost:1234/v1 MARGINALIA_LLM_MODEL=my-model bash
+```
+
+Example, fully non-interactive on Windows:
+
+```powershell
+$env:MARGINALIA_LLM_API_BASE = "http://localhost:1234/v1"
+$env:MARGINALIA_LLM_MODEL = "my-model"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/OktoLabsAI/marginalia-dist/main/install.ps1 | iex"
 ```
 
 ## After install

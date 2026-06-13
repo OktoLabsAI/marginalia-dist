@@ -2,7 +2,11 @@
 #
 # Marginalia one-shot installer.
 #
-#   curl -fsSL https://<dist-host>/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/OktoLabsAI/marginalia-dist/main/install.sh | bash
+#
+# Windows users should use install.ps1 from this same repo:
+#
+#   powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/OktoLabsAI/marginalia-dist/main/install.ps1 | iex"
 #
 # Takes a fresh machine from zero to a running Marginalia daemon wired into
 # Claude Code:  prereqs → install tool → create vault → configure LLM →
@@ -23,6 +27,15 @@
 #   MARGINALIA_NO_MCP=1     don't run `claude mcp add`
 #
 set -euo pipefail
+
+case "${OS:-}:$(uname -s 2>/dev/null || true)" in
+  Windows_NT:*|*:CYGWIN*|*:MINGW*|*:MSYS*)
+    printf "%s\n" "This Bash installer is for macOS/Linux."
+    printf "%s\n" "On Windows, run:"
+    printf "%s\n" "  powershell -NoProfile -ExecutionPolicy Bypass -Command \"irm https://raw.githubusercontent.com/OktoLabsAI/marginalia-dist/main/install.ps1 | iex\""
+    exit 1
+    ;;
+esac
 
 # ── config ────────────────────────────────────────────────────────────────
 # The public distribution copy of this script bakes a release-wheel URL here so
