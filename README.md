@@ -59,6 +59,23 @@ $env:MARGINALIA_LLM_MODEL = "my-model"
 powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/OktoLabsAI/marginalia-dist/main/install.ps1 | iex"
 ```
 
+## Safe Onboarding Test
+
+To test the full macOS/Linux onboarding flow without touching your real
+`~/.marginalia` vaults or Claude config:
+
+```bash
+./test-install.sh
+```
+
+The test wrapper uses a fresh isolated `HOME`, disables MCP registration, and
+keeps the sandbox so you can inspect the vault and UI. To run a noninteractive
+install-only smoke test and delete the sandbox afterward:
+
+```bash
+./test-install.sh --api-base http://localhost:1234/v1 --model my-model --no-serve --cleanup
+```
+
 ## After install
 
 - Web UI: <http://127.0.0.1:7777>
