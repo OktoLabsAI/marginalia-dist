@@ -12,7 +12,7 @@ $ErrorActionPreference = "Stop"
 $DefaultWheelUrl = if ($env:MARGINALIA_DEFAULT_WHEEL_URL) {
     $env:MARGINALIA_DEFAULT_WHEEL_URL
 } else {
-    "https://github.com/OktoLabsAI/marginalia-dist/releases/download/v0.0.15/marginalia-0.0.15-py3-none-any.whl"
+    "https://github.com/OktoLabsAI/marginalia-dist/releases/download/v0.0.16/marginalia-0.0.16-py3-none-any.whl"
 }
 $Extras = "embeddings,ladybug,mcp,litellm"
 $PyVersion = "3.12"
