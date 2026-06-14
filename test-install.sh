@@ -37,11 +37,18 @@ Modes:
 
 Profiles for tmux modes:
   --profile skip       Choose "Skip LLM setup"; verifies no explicit llm block.
+  --profile auto-lm-studio  Auto-detect a mocked LM Studio endpoint.
   --profile lm-studio  Start a mock LM Studio /v1/models endpoint and choose it.
   --profile ollama     Start a mock Ollama OpenAI-compatible endpoint and choose it.
   --profile litellm    Start a mock LiteLLM Proxy model-info endpoint and choose it.
   --profile hosted-openai  Choose OpenAI with a fake exported key and manual model.
+  --profile hosted-openrouter  Choose OpenRouter with a fake exported key/model.
+  --profile hosted-gemini  Choose Gemini with a fake exported key/model.
+  --profile hosted-anthropic  Choose Anthropic with a fake exported key/model.
   --profile custom     Choose custom endpoint; requires --api-base and --model.
+  --profile existing-keep  Preseed LLM config and choose keep existing.
+  --profile existing-reconfigure  Preseed LLM config and reconfigure to LM Studio.
+  --profile disable-llm  Preseed LLM config and choose disable.
   --profile interactive  Do not auto-drive prompts; print tmux attach command.
 
 Options:
@@ -141,15 +148,25 @@ while [ "$#" -gt 0 ]; do
 done
 
 case "$PROFILE" in
-  interactive|skip|lm-studio|ollama|litellm|hosted-openai|custom) ;;
+  interactive|skip|auto-lm-studio|lm-studio|ollama|litellm|hosted-openai|hosted-openrouter|hosted-gemini|hosted-anthropic|custom|existing-keep|existing-reconfigure|disable-llm) ;;
   *) die "unknown profile: $PROFILE" ;;
 esac
 if [ "$PROFILE" = "custom" ] && { [ -z "$API_BASE" ] || [ -z "$MODEL" ]; }; then
   die "--profile custom requires --api-base and --model"
 fi
-if [ "$PROFILE" = "hosted-openai" ] && [ -z "$MODEL" ]; then
-  MODEL="hosted-human-model"
-fi
+case "$PROFILE" in
+  hosted-openai) [ -z "$MODEL" ] && MODEL="hosted-human-model" ;;
+  hosted-openrouter) [ -z "$MODEL" ] && MODEL="openrouter-human-model" ;;
+  hosted-gemini) [ -z "$MODEL" ] && MODEL="gemini-human-model" ;;
+  hosted-anthropic) [ -z "$MODEL" ] && MODEL="anthropic-human-model" ;;
+esac
+
+profile_uses_fake_secret() {
+  case "$PROFILE" in
+    hosted-openai|hosted-openrouter|hosted-gemini|hosted-anthropic) return 0 ;;
+    *) return 1 ;;
+  esac
+}
 
 command -v curl >/dev/null 2>&1 || die "curl is required"
 command -v bash >/dev/null 2>&1 || die "bash is required"
@@ -324,6 +341,27 @@ PY
   exit 80
 }
 
+seed_existing_config() {
+  mkdir -p "$HOME/.marginalia/vaults/$VAULT"
+  cat > "$HOME/.marginalia/vaults/$VAULT/marginalia.yaml" <<YAML
+marginalia_yaml_version: 1
+vault_id: $VAULT
+packs:
+  - core
+embedding:
+  provider: fastembed
+  model: BAAI/bge-small-en-v1.5
+llm:
+  enabled: true
+  allow_remote: false
+  defaults:
+    provider: openai
+    api_base: http://127.0.0.1:9999/v1
+    model: preexisting-model
+    api_key_env: MARGINALIA_EXISTING_KEY
+YAML
+}
+
 export HOME="$TEST_HOME"
 export XDG_DATA_HOME="$HOME/.local/share"
 export XDG_CACHE_HOME="$HOME/.cache"
@@ -333,13 +371,19 @@ export MARGINALIA_NO_MCP=1
 export MARGINALIA_VAULT="$VAULT"
 [ "$NO_SERVE" = "1" ] && export MARGINALIA_NO_SERVE=1
 
-if [ "$PROFILE" = "lm-studio" ]; then
+case "$PROFILE" in
+  existing-keep|existing-reconfigure|disable-llm)
+    seed_existing_config
+    ;;
+esac
+
+if [ "$PROFILE" = "lm-studio" ] || [ "$PROFILE" = "auto-lm-studio" ] || [ "$PROFILE" = "existing-reconfigure" ]; then
   start_mock_lm_studio
 elif [ "$PROFILE" = "ollama" ]; then
   start_mock_ollama
 elif [ "$PROFILE" = "litellm" ]; then
   start_mock_litellm
-elif [ "$PROFILE" = "hosted-openai" ]; then
+elif [ "$PROFILE" = "hosted-openai" ] || [ "$PROFILE" = "hosted-openrouter" ] || [ "$PROFILE" = "hosted-gemini" ] || [ "$PROFILE" = "hosted-anthropic" ]; then
   export MARGINALIA_LLM_MODEL="$MODEL"
   export MARGINALIA_LLM_API_KEY_ENV=MARGINALIA_HOSTED_TEST_KEY
   export MARGINALIA_HOSTED_TEST_KEY=sk-fake-public-installer-test
@@ -363,6 +407,10 @@ case "$PROFILE" in
     grep -q 'provider: lm_studio' "$YAML"
     grep -q 'mac-human-model' "$YAML"
     ;;
+  auto-lm-studio)
+    grep -q 'provider: lm_studio' "$YAML"
+    grep -q 'mac-human-model' "$YAML"
+    ;;
   ollama)
     grep -q 'provider: ollama' "$YAML"
     grep -q 'mac-ollama-human-model' "$YAML"
@@ -379,8 +427,39 @@ case "$PROFILE" in
     grep -q 'api_key_env: MARGINALIA_HOSTED_TEST_KEY' "$YAML"
     ! grep -q 'sk-fake-public-installer-test' "$YAML"
     ;;
+  hosted-openrouter)
+    grep -q 'provider: openrouter' "$YAML"
+    grep -q "$MODEL" "$YAML"
+    grep -q 'api_key_env: MARGINALIA_HOSTED_TEST_KEY' "$YAML"
+    ! grep -q 'sk-fake-public-installer-test' "$YAML"
+    ;;
+  hosted-gemini)
+    grep -q 'provider: gemini' "$YAML"
+    grep -q 'api_base: https://generativelanguage.googleapis.com/v1beta/openai/' "$YAML"
+    grep -q "$MODEL" "$YAML"
+    grep -q 'api_key_env: MARGINALIA_HOSTED_TEST_KEY' "$YAML"
+    ! grep -q 'sk-fake-public-installer-test' "$YAML"
+    ;;
+  hosted-anthropic)
+    grep -q 'provider: anthropic' "$YAML"
+    grep -q "$MODEL" "$YAML"
+    grep -q 'api_key_env: MARGINALIA_HOSTED_TEST_KEY' "$YAML"
+    ! grep -q 'sk-fake-public-installer-test' "$YAML"
+    ;;
   custom)
     grep -q "$MODEL" "$YAML"
+    ;;
+  existing-keep)
+    grep -q 'preexisting-model' "$YAML"
+    grep -q 'api_base: http://127.0.0.1:9999/v1' "$YAML"
+    ;;
+  existing-reconfigure)
+    grep -q 'provider: lm_studio' "$YAML"
+    grep -q 'mac-human-model' "$YAML"
+    ! grep -q 'preexisting-model' "$YAML"
+    ;;
+  disable-llm)
+    grep -q 'enabled: false' "$YAML"
     ;;
 esac
 marginalia stop --vault "$VAULT" >/dev/null 2>&1 || true
@@ -511,17 +590,44 @@ PY
   exit 80
 }
 
+seed_existing_config() {
+  mkdir -p "$HOME/.marginalia/vaults/$VAULT"
+  cat > "$HOME/.marginalia/vaults/$VAULT/marginalia.yaml" <<YAML
+marginalia_yaml_version: 1
+vault_id: $VAULT
+packs:
+  - core
+embedding:
+  provider: fastembed
+  model: BAAI/bge-small-en-v1.5
+llm:
+  enabled: true
+  allow_remote: false
+  defaults:
+    provider: openai
+    api_base: http://127.0.0.1:9999/v1
+    model: preexisting-model
+    api_key_env: MARGINALIA_EXISTING_KEY
+YAML
+}
+
 export MARGINALIA_NO_MCP=1
 export MARGINALIA_VAULT="$VAULT"
 [ "$NO_SERVE" = "1" ] && export MARGINALIA_NO_SERVE=1
 
-if [ "$PROFILE" = "lm-studio" ]; then
+case "$PROFILE" in
+  existing-keep|existing-reconfigure|disable-llm)
+    seed_existing_config
+    ;;
+esac
+
+if [ "$PROFILE" = "lm-studio" ] || [ "$PROFILE" = "auto-lm-studio" ] || [ "$PROFILE" = "existing-reconfigure" ]; then
   start_mock_lm_studio
 elif [ "$PROFILE" = "ollama" ]; then
   start_mock_ollama
 elif [ "$PROFILE" = "litellm" ]; then
   start_mock_litellm
-elif [ "$PROFILE" = "hosted-openai" ]; then
+elif [ "$PROFILE" = "hosted-openai" ] || [ "$PROFILE" = "hosted-openrouter" ] || [ "$PROFILE" = "hosted-gemini" ] || [ "$PROFILE" = "hosted-anthropic" ]; then
   export MARGINALIA_LLM_MODEL="$MODEL"
   export MARGINALIA_LLM_API_KEY_ENV=MARGINALIA_HOSTED_TEST_KEY
   export MARGINALIA_HOSTED_TEST_KEY=sk-fake-public-installer-test
@@ -545,6 +651,10 @@ case "$PROFILE" in
     grep -q 'provider: lm_studio' "$YAML"
     grep -q 'docker-human-model' "$YAML"
     ;;
+  auto-lm-studio)
+    grep -q 'provider: lm_studio' "$YAML"
+    grep -q 'docker-human-model' "$YAML"
+    ;;
   ollama)
     grep -q 'provider: ollama' "$YAML"
     grep -q 'docker-ollama-human-model' "$YAML"
@@ -561,8 +671,39 @@ case "$PROFILE" in
     grep -q 'api_key_env: MARGINALIA_HOSTED_TEST_KEY' "$YAML"
     ! grep -q 'sk-fake-public-installer-test' "$YAML"
     ;;
+  hosted-openrouter)
+    grep -q 'provider: openrouter' "$YAML"
+    grep -q "$MODEL" "$YAML"
+    grep -q 'api_key_env: MARGINALIA_HOSTED_TEST_KEY' "$YAML"
+    ! grep -q 'sk-fake-public-installer-test' "$YAML"
+    ;;
+  hosted-gemini)
+    grep -q 'provider: gemini' "$YAML"
+    grep -q 'api_base: https://generativelanguage.googleapis.com/v1beta/openai/' "$YAML"
+    grep -q "$MODEL" "$YAML"
+    grep -q 'api_key_env: MARGINALIA_HOSTED_TEST_KEY' "$YAML"
+    ! grep -q 'sk-fake-public-installer-test' "$YAML"
+    ;;
+  hosted-anthropic)
+    grep -q 'provider: anthropic' "$YAML"
+    grep -q "$MODEL" "$YAML"
+    grep -q 'api_key_env: MARGINALIA_HOSTED_TEST_KEY' "$YAML"
+    ! grep -q 'sk-fake-public-installer-test' "$YAML"
+    ;;
   custom)
     grep -q "$MODEL" "$YAML"
+    ;;
+  existing-keep)
+    grep -q 'preexisting-model' "$YAML"
+    grep -q 'api_base: http://127.0.0.1:9999/v1' "$YAML"
+    ;;
+  existing-reconfigure)
+    grep -q 'provider: lm_studio' "$YAML"
+    grep -q 'docker-human-model' "$YAML"
+    ! grep -q 'preexisting-model' "$YAML"
+    ;;
+  disable-llm)
+    grep -q 'enabled: false' "$YAML"
     ;;
 esac
 marginalia stop --vault "$VAULT" >/dev/null 2>&1 || true
@@ -602,6 +743,14 @@ drive_profile() {
     skip)
       wait_for_text "Provider" 900
       tmux send-keys -t "$SESSION" "0" C-m
+      ;;
+    auto-lm-studio)
+      wait_for_text "Provider" 900
+      tmux send-keys -t "$SESSION" "1" C-m
+      wait_for_text "Base URL" 120
+      tmux send-keys -t "$SESSION" C-m
+      wait_for_text "API key" 120
+      tmux send-keys -t "$SESSION" C-m
       ;;
     lm-studio)
       wait_for_text "Provider" 900
@@ -643,6 +792,36 @@ drive_profile() {
       wait_for_text "API key" 120
       tmux send-keys -t "$SESSION" C-m
       ;;
+    hosted-openrouter)
+      wait_for_text "Provider" 900
+      tmux send-keys -t "$SESSION" "5" C-m
+      wait_for_text "Base URL" 120
+      tmux send-keys -t "$SESSION" C-m
+      wait_for_text "Allow this endpoint?" 120
+      tmux send-keys -t "$SESSION" "y" C-m
+      wait_for_text "API key" 120
+      tmux send-keys -t "$SESSION" C-m
+      ;;
+    hosted-gemini)
+      wait_for_text "Provider" 900
+      tmux send-keys -t "$SESSION" "7" C-m
+      wait_for_text "Base URL" 120
+      tmux send-keys -t "$SESSION" C-m
+      wait_for_text "Allow this endpoint?" 120
+      tmux send-keys -t "$SESSION" "y" C-m
+      wait_for_text "API key" 120
+      tmux send-keys -t "$SESSION" C-m
+      ;;
+    hosted-anthropic)
+      wait_for_text "Provider" 900
+      tmux send-keys -t "$SESSION" "8" C-m
+      wait_for_text "Base URL" 120
+      tmux send-keys -t "$SESSION" C-m
+      wait_for_text "Allow this endpoint?" 120
+      tmux send-keys -t "$SESSION" "y" C-m
+      wait_for_text "API key" 120
+      tmux send-keys -t "$SESSION" C-m
+      ;;
     custom)
       wait_for_text "Provider" 900
       tmux send-keys -t "$SESSION" "9" C-m
@@ -652,6 +831,26 @@ drive_profile() {
       tmux send-keys -t "$SESSION" C-m
       wait_for_text "Model" 120
       tmux send-keys -t "$SESSION" "$MODEL" C-m
+      ;;
+    existing-keep)
+      wait_for_text "Action" 900
+      tmux send-keys -t "$SESSION" "1" C-m
+      ;;
+    existing-reconfigure)
+      wait_for_text "Action" 900
+      tmux send-keys -t "$SESSION" "3" C-m
+      wait_for_text "Provider" 120
+      tmux send-keys -t "$SESSION" "2" C-m
+      wait_for_text "Base URL" 120
+      tmux send-keys -t "$SESSION" C-m
+      wait_for_text "API key" 120
+      tmux send-keys -t "$SESSION" C-m
+      wait_for_text "Model" 120
+      tmux send-keys -t "$SESSION" C-m
+      ;;
+    disable-llm)
+      wait_for_text "Action" 900
+      tmux send-keys -t "$SESSION" "4" C-m
       ;;
   esac
 }
@@ -704,7 +903,7 @@ run_host_tmux() {
   if [ "$PROFILE" != "interactive" ]; then
     wait_for_text "MAC_TMUX_HUMAN_INSTALL_OK" 1800
     capture
-    if [ "$PROFILE" = "hosted-openai" ]; then
+    if profile_uses_fake_secret; then
       if grep -q 'sk-fake-public-installer-test' "$EVIDENCE"; then
         die "fake hosted secret leaked into tmux evidence: $EVIDENCE"
       fi
@@ -725,7 +924,7 @@ run_docker_tmux() {
   if [ "$PROFILE" != "interactive" ]; then
     wait_for_text "DOCKER_TMUX_HUMAN_INSTALL_OK" 2400
     capture
-    if [ "$PROFILE" = "hosted-openai" ]; then
+    if profile_uses_fake_secret; then
       if grep -q 'sk-fake-public-installer-test' "$EVIDENCE"; then
         die "fake hosted secret leaked into tmux evidence: $EVIDENCE"
       fi

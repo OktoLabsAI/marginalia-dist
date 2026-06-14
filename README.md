@@ -97,19 +97,29 @@ Canonical human-prompt tests use tmux and still install from the raw URL:
 ```bash
 # Fresh Linux image in Docker, prompts driven through tmux.
 ./test-install.sh --docker-tmux --profile skip --cleanup
+./test-install.sh --docker-tmux --profile auto-lm-studio --cleanup
 ./test-install.sh --docker-tmux --profile lm-studio --cleanup
 ./test-install.sh --docker-tmux --profile ollama --cleanup
 ./test-install.sh --docker-tmux --profile litellm --cleanup
 ./test-install.sh --docker-tmux --profile hosted-openai --cleanup
+./test-install.sh --docker-tmux --profile hosted-openrouter --cleanup
+./test-install.sh --docker-tmux --profile hosted-gemini --cleanup
+./test-install.sh --docker-tmux --profile hosted-anthropic --cleanup
+./test-install.sh --docker-tmux --profile existing-keep --cleanup
+./test-install.sh --docker-tmux --profile existing-reconfigure --cleanup
+./test-install.sh --docker-tmux --profile disable-llm --cleanup
 
 # macOS/Linux host with isolated HOME, prompts driven through tmux.
 ./test-install.sh --tmux --profile skip --cleanup
 ./test-install.sh --tmux --profile lm-studio --cleanup
 ```
 
-The scripted profiles cover skip, LM Studio, Ollama, LiteLLM Proxy, hosted
-OpenAI with a fake exported key and manual model, and custom endpoints. Each
-tmux run writes `capture-pane` evidence under the sandbox directory.
+The scripted profiles cover skip, auto-detect, LM Studio, Ollama, LiteLLM
+Proxy, OpenAI, OpenRouter, Gemini, Anthropic, existing-config keep,
+existing-config reconfigure, disable, and custom endpoints. Hosted profiles use
+a fake exported key and manual model; the tester fails if that fake key appears
+in YAML or tmux evidence. Each tmux run writes `capture-pane` evidence under the
+sandbox directory.
 
 Windows uses a matching PowerShell tester. Run it from a real Windows
 PowerShell terminal, not from macOS/Linux PowerShell or Docker:
