@@ -10,7 +10,7 @@ set -euo pipefail
 
 DEFAULT_URL="https://raw.githubusercontent.com/OktoLabsAI/marginalia-dist/main/install.sh"
 INSTALL_URL="${MARGINALIA_INSTALL_URL:-$DEFAULT_URL}"
-TEST_HOME="${MARGINALIA_TEST_HOME:-${TMPDIR:-/tmp}/marginalia-install-test-$(date +%Y%m%d-%H%M%S)}"
+TEST_HOME="${MARGINALIA_TEST_HOME:-}"
 ORIGINAL_HOME="${HOME:-}"
 VAULT="${MARGINALIA_VAULT:-mynotes}"
 PROVIDER="${MARGINALIA_LLM_PROVIDER:-}"
@@ -20,7 +20,7 @@ PROFILE="interactive"
 MODE="direct"
 CLEANUP=0
 NO_SERVE=0
-SESSION="marginalia-install-$(date +%H%M%S)"
+SESSION="${MARGINALIA_TEST_SESSION:-}"
 CONTAINER="marginalia-install-human"
 EVIDENCE=""
 
@@ -53,7 +53,7 @@ Profiles for tmux modes:
   --profile interactive  Do not auto-drive prompts; print tmux attach command.
 
 Options:
-  --home PATH       Test HOME/evidence directory (default: fresh $TMPDIR path)
+  --home PATH       Test HOME/evidence directory (default: per-mode/profile path)
   --url URL         Installer URL (default: public raw GitHub install.sh)
   --vault NAME      Test vault name (default: mynotes)
   --provider ID     Pre-fill MARGINALIA_LLM_PROVIDER for direct mode
@@ -65,8 +65,9 @@ Options:
   --cleanup         Stop daemon/container and delete the test home after the run
   -h, --help        Show this help
 
-All modes install from the raw URL by default, set MARGINALIA_NO_MCP=1, and
-refuse to use your real HOME or ~/.marginalia as the sandbox.
+All modes install from the raw URL by default, set MARGINALIA_NO_MCP=1, delete
+the previous sandbox for the selected mode/profile before running, and refuse to
+use your real HOME or ~/.marginalia as the sandbox.
 EOF
 }
 
@@ -169,6 +170,15 @@ profile_uses_fake_secret() {
   esac
 }
 
+init_paths() {
+  if [ -z "$TEST_HOME" ]; then
+    TEST_HOME="${TMPDIR:-/tmp}/marginalia-install-test-${MODE}-${PROFILE}"
+  fi
+  if [ -z "$SESSION" ]; then
+    SESSION="marginalia-install-${MODE}-${PROFILE}"
+  fi
+}
+
 command -v curl >/dev/null 2>&1 || die "curl is required"
 command -v bash >/dev/null 2>&1 || die "bash is required"
 if [ "$MODE" = "tmux" ] || [ "$MODE" = "docker-tmux" ]; then
@@ -184,17 +194,18 @@ port_open() {
 }
 
 prepare_home() {
-  if curl -fsS http://127.0.0.1:7777/health >/dev/null 2>&1 || port_open 7777; then
-    die "127.0.0.1:7777 is already in use. Stop the real Marginalia daemon first."
-  fi
-  if [ "$NO_SERVE" -ne 1 ] && port_open 8201; then
-    die "127.0.0.1:8201 is already in use. Stop the process using it first."
-  fi
-
-  TEST_HOME="$(mkdir -p "$TEST_HOME" && cd "$TEST_HOME" && pwd)"
+  local parent
+  parent="$(mkdir -p "$(dirname "$TEST_HOME")" && cd "$(dirname "$TEST_HOME")" && pwd)"
+  TEST_HOME="${parent}/$(basename "$TEST_HOME")"
   if [ "$TEST_HOME" = "/" ]; then
     die "refusing to use / as a test home"
   fi
+  case "$(basename "$TEST_HOME")" in
+    marginalia-install-test*) ;;
+    *)
+      die "refusing to clean non-test-looking home: $TEST_HOME"
+      ;;
+  esac
   if [ -n "$ORIGINAL_HOME" ]; then
     ORIGINAL_HOME="$(cd "$ORIGINAL_HOME" && pwd)"
     case "$TEST_HOME" in
@@ -203,25 +214,79 @@ prepare_home() {
         ;;
     esac
   fi
-  EVIDENCE="$TEST_HOME/evidence-${SESSION}.txt"
-}
-
-cleanup_sandbox() {
-  local tool_bin="$TEST_HOME/.local/bin"
-  if [ -x "$tool_bin/marginalia" ]; then
-    HOME="$TEST_HOME" \
-    XDG_DATA_HOME="$TEST_HOME/.local/share" \
-    XDG_CACHE_HOME="$TEST_HOME/.cache" \
-    XDG_CONFIG_HOME="$TEST_HOME/.config" \
-    UV_CACHE_DIR="$TEST_HOME/.cache/uv" \
-    PATH="$tool_bin:$PATH" \
-      "$tool_bin/marginalia" stop --vault "$VAULT" >/dev/null 2>&1 || true
-  fi
+  cleanup_previous_test_runs
+  cleanup_test_home_path "$TEST_HOME"
+  command -v tmux >/dev/null 2>&1 && tmux kill-session -t "$SESSION" >/dev/null 2>&1 || true
   if [ "$MODE" = "docker-tmux" ]; then
     docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
   fi
-  tmux kill-session -t "$SESSION" >/dev/null 2>&1 || true
-  rm -rf "$TEST_HOME"
+  if curl -fsS http://127.0.0.1:7777/health >/dev/null 2>&1 || port_open 7777; then
+    die "127.0.0.1:7777 is already in use. Stop the real Marginalia daemon first."
+  fi
+  if [ "$NO_SERVE" -ne 1 ] && port_open 8201; then
+    die "127.0.0.1:8201 is already in use. Stop the process using it first."
+  fi
+
+  mkdir -p "$TEST_HOME"
+  EVIDENCE="$TEST_HOME/evidence-${SESSION}.txt"
+}
+
+stop_marginalia_in_home() {
+  local home="$1"
+  local tool_bin="$home/.local/bin"
+  if [ -x "$tool_bin/marginalia" ]; then
+    HOME="$home" \
+    XDG_DATA_HOME="$home/.local/share" \
+    XDG_CACHE_HOME="$home/.cache" \
+    XDG_CONFIG_HOME="$home/.config" \
+    UV_CACHE_DIR="$home/.cache/uv" \
+    PATH="$tool_bin:$PATH" \
+      "$tool_bin/marginalia" stop --vault "$VAULT" >/dev/null 2>&1 || true
+  fi
+}
+
+cleanup_test_home_path() {
+  local home="$1"
+  [ -e "$home" ] || return 0
+  case "$(basename "$home")" in
+    marginalia-install-test*) ;;
+    *) die "refusing to delete non-test-looking home: $home" ;;
+  esac
+  if [ -n "$ORIGINAL_HOME" ]; then
+    case "$home" in
+      "$ORIGINAL_HOME"|"$ORIGINAL_HOME/.marginalia"|"$ORIGINAL_HOME/.marginalia"/*)
+        die "refusing to delete your real HOME or ~/.marginalia: $home"
+        ;;
+    esac
+  fi
+  stop_marginalia_in_home "$home"
+  rm -rf "$home"
+}
+
+cleanup_previous_test_runs() {
+  local tmp_root candidate parent home session_name
+  tmp_root="$(mkdir -p "${TMPDIR:-/tmp}" && cd "${TMPDIR:-/tmp}" && pwd)"
+  for candidate in "$tmp_root"/marginalia-install-test*; do
+    [ -e "$candidate" ] || continue
+    parent="$(cd "$(dirname "$candidate")" && pwd)"
+    home="${parent}/$(basename "$candidate")"
+    cleanup_test_home_path "$home"
+  done
+  if command -v tmux >/dev/null 2>&1; then
+    while IFS= read -r session_name; do
+      case "$session_name" in
+        marginalia-install-*) tmux kill-session -t "$session_name" >/dev/null 2>&1 || true ;;
+      esac
+    done < <(tmux list-sessions -F '#S' 2>/dev/null || true)
+  fi
+}
+
+cleanup_sandbox() {
+  if [ "$MODE" = "docker-tmux" ]; then
+    docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
+  fi
+  command -v tmux >/dev/null 2>&1 && tmux kill-session -t "$SESSION" >/dev/null 2>&1 || true
+  cleanup_test_home_path "$TEST_HOME"
 }
 
 write_host_runner() {
@@ -956,6 +1021,7 @@ run_docker_tmux() {
   fi
 }
 
+init_paths
 prepare_home
 if [ "$CLEANUP" -eq 1 ]; then
   trap cleanup_sandbox EXIT

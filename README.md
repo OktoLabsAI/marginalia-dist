@@ -84,17 +84,18 @@ To test the full macOS/Linux onboarding flow without touching your real
 ./test-install.sh
 ```
 
-The test wrapper uses a fresh isolated `HOME`, disables MCP registration, and
-keeps the sandbox so you can inspect the vault and UI. To run a noninteractive
-install-only smoke test and delete the sandbox afterward:
+The test wrapper uses an isolated `HOME`, disables MCP registration, and deletes
+previous `marginalia-install-test*` sandboxes before it starts. It keeps the new
+sandbox after the run so you can inspect the vault and UI. To run a
+noninteractive install-only smoke test and delete the sandbox afterward:
 
 ```bash
 ./test-install.sh --api-base http://localhost:1234/v1 --model my-model --no-serve --cleanup
 ```
 
 Canonical human-prompt tests use tmux and still install from the raw URL. These
-examples keep the sandbox so the `capture-pane` evidence remains; add
-`--cleanup` only for throwaway smoke runs.
+examples keep the new sandbox so the current `capture-pane` evidence remains;
+add `--cleanup` only for throwaway smoke runs.
 
 ```bash
 # Fresh Linux image in Docker, prompts driven through tmux.
