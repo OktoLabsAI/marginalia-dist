@@ -47,6 +47,7 @@ Profiles for tmux modes:
   --profile hosted-anthropic  Choose Anthropic with a fake exported key/model.
   --profile custom     Choose custom endpoint; requires --api-base and --model.
   --profile existing-keep  Preseed LLM config and choose keep existing.
+  --profile existing-inspect  Preseed LLM config and test it without writing.
   --profile existing-reconfigure  Preseed LLM config and reconfigure to LM Studio.
   --profile disable-llm  Preseed LLM config and choose disable.
   --profile interactive  Do not auto-drive prompts; print tmux attach command.
@@ -148,7 +149,7 @@ while [ "$#" -gt 0 ]; do
 done
 
 case "$PROFILE" in
-  interactive|skip|auto-lm-studio|lm-studio|ollama|litellm|hosted-openai|hosted-openrouter|hosted-gemini|hosted-anthropic|custom|existing-keep|existing-reconfigure|disable-llm) ;;
+  interactive|skip|auto-lm-studio|lm-studio|ollama|litellm|hosted-openai|hosted-openrouter|hosted-gemini|hosted-anthropic|custom|existing-keep|existing-inspect|existing-reconfigure|disable-llm) ;;
   *) die "unknown profile: $PROFILE" ;;
 esac
 if [ "$PROFILE" = "custom" ] && { [ -z "$API_BASE" ] || [ -z "$MODEL" ]; }; then
@@ -372,7 +373,7 @@ export MARGINALIA_VAULT="$VAULT"
 [ "$NO_SERVE" = "1" ] && export MARGINALIA_NO_SERVE=1
 
 case "$PROFILE" in
-  existing-keep|existing-reconfigure|disable-llm)
+  existing-keep|existing-inspect|existing-reconfigure|disable-llm)
     seed_existing_config
     ;;
 esac
@@ -450,6 +451,10 @@ case "$PROFILE" in
     grep -q "$MODEL" "$YAML"
     ;;
   existing-keep)
+    grep -q 'preexisting-model' "$YAML"
+    grep -q 'api_base: http://127.0.0.1:9999/v1' "$YAML"
+    ;;
+  existing-inspect)
     grep -q 'preexisting-model' "$YAML"
     grep -q 'api_base: http://127.0.0.1:9999/v1' "$YAML"
     ;;
@@ -616,7 +621,7 @@ export MARGINALIA_VAULT="$VAULT"
 [ "$NO_SERVE" = "1" ] && export MARGINALIA_NO_SERVE=1
 
 case "$PROFILE" in
-  existing-keep|existing-reconfigure|disable-llm)
+  existing-keep|existing-inspect|existing-reconfigure|disable-llm)
     seed_existing_config
     ;;
 esac
@@ -694,6 +699,10 @@ case "$PROFILE" in
     grep -q "$MODEL" "$YAML"
     ;;
   existing-keep)
+    grep -q 'preexisting-model' "$YAML"
+    grep -q 'api_base: http://127.0.0.1:9999/v1' "$YAML"
+    ;;
+  existing-inspect)
     grep -q 'preexisting-model' "$YAML"
     grep -q 'api_base: http://127.0.0.1:9999/v1' "$YAML"
     ;;
@@ -836,6 +845,10 @@ drive_profile() {
       wait_for_text "Action" 900
       tmux send-keys -t "$SESSION" "1" C-m
       ;;
+    existing-inspect)
+      wait_for_text "Action" 900
+      tmux send-keys -t "$SESSION" "2" C-m
+      ;;
     existing-reconfigure)
       wait_for_text "Action" 900
       tmux send-keys -t "$SESSION" "3" C-m
@@ -908,6 +921,10 @@ run_host_tmux() {
         die "fake hosted secret leaked into tmux evidence: $EVIDENCE"
       fi
     fi
+    if [ "$PROFILE" = "existing-inspect" ]; then
+      grep -Fq "Testing existing LLM config" "$EVIDENCE" || die "inspection branch did not run: $EVIDENCE"
+      grep -Fq "config unchanged" "$EVIDENCE" || die "inspection branch did not preserve config: $EVIDENCE"
+    fi
     printf 'tmux host install passed. Evidence: %s\n' "$EVIDENCE"
   fi
 }
@@ -928,6 +945,10 @@ run_docker_tmux() {
       if grep -q 'sk-fake-public-installer-test' "$EVIDENCE"; then
         die "fake hosted secret leaked into tmux evidence: $EVIDENCE"
       fi
+    fi
+    if [ "$PROFILE" = "existing-inspect" ]; then
+      grep -Fq "Testing existing LLM config" "$EVIDENCE" || die "inspection branch did not run: $EVIDENCE"
+      grep -Fq "config unchanged" "$EVIDENCE" || die "inspection branch did not preserve config: $EVIDENCE"
     fi
     printf 'Docker tmux install passed. Evidence: %s\n' "$EVIDENCE"
   fi

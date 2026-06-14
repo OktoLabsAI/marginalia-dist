@@ -106,6 +106,7 @@ Canonical human-prompt tests use tmux and still install from the raw URL:
 ./test-install.sh --docker-tmux --profile hosted-gemini --cleanup
 ./test-install.sh --docker-tmux --profile hosted-anthropic --cleanup
 ./test-install.sh --docker-tmux --profile existing-keep --cleanup
+./test-install.sh --docker-tmux --profile existing-inspect --cleanup
 ./test-install.sh --docker-tmux --profile existing-reconfigure --cleanup
 ./test-install.sh --docker-tmux --profile disable-llm --cleanup
 
@@ -116,10 +117,10 @@ Canonical human-prompt tests use tmux and still install from the raw URL:
 
 The scripted profiles cover skip, auto-detect, LM Studio, Ollama, LiteLLM
 Proxy, OpenAI, OpenRouter, Gemini, Anthropic, existing-config keep,
-existing-config reconfigure, disable, and custom endpoints. Hosted profiles use
-a fake exported key and manual model; the tester fails if that fake key appears
-in YAML or tmux evidence. Each tmux run writes `capture-pane` evidence under the
-sandbox directory.
+existing-config inspect, existing-config reconfigure, disable, and custom
+endpoints. Hosted profiles use a fake exported key and manual model; the tester
+fails if that fake key appears in YAML or tmux evidence. Each tmux run writes
+`capture-pane` evidence under the sandbox directory.
 
 Windows uses a matching PowerShell tester. Run it from a real Windows
 PowerShell terminal, not from macOS/Linux PowerShell or Docker:
