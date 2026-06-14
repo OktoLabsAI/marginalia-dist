@@ -12,7 +12,7 @@ $ErrorActionPreference = "Stop"
 $DefaultWheelUrl = if ($env:MARGINALIA_DEFAULT_WHEEL_URL) {
     $env:MARGINALIA_DEFAULT_WHEEL_URL
 } else {
-    "https://github.com/OktoLabsAI/marginalia-dist/releases/download/v0.0.13/marginalia-0.0.13-py3-none-any.whl"
+    "https://github.com/OktoLabsAI/marginalia-dist/releases/download/v0.0.14/marginalia-0.0.14-py3-none-any.whl"
 }
 $Extras = "embeddings,ladybug,mcp,litellm"
 $PyVersion = "3.12"
@@ -79,43 +79,6 @@ function Get-MarginaliaCommand {
         }
     }
     return $null
-}
-
-function Pick-Model([string]$ApiBase) {
-    $base = $ApiBase.TrimEnd("/")
-    $ids = @()
-    try {
-        $response = Invoke-RestMethod -Uri "$base/models" -TimeoutSec 8 -ErrorAction Stop
-        if ($null -ne $response.data) {
-            foreach ($model in @($response.data)) {
-                if ($model.id) {
-                    $ids += [string]$model.id
-                }
-            }
-        }
-    } catch {
-        Warn "couldn't list models from $base/models - enter the name manually"
-        return Prompt-Value "  LLM model name:" ""
-    }
-
-    if ($ids.Count -eq 0) {
-        Warn "couldn't list models from $base/models - enter the name manually"
-        return Prompt-Value "  LLM model name:" ""
-    }
-
-    Info "models available at ${base}:"
-    for ($i = 0; $i -lt $ids.Count; $i++) {
-        $n = $i + 1
-        Write-Host ("      {0,2}) {1}" -f $n, $ids[$i])
-    }
-    $selection = Prompt-Value "  Pick a number, or type a model name:" "1"
-    $index = 0
-    if ([int]::TryParse($selection, [ref]$index)) {
-        if ($index -ge 1 -and $index -le $ids.Count) {
-            return $ids[$index - 1]
-        }
-    }
-    return $selection
 }
 
 trap {
@@ -235,52 +198,37 @@ if ($upgrade) {
         Info "created $VaultDir"
     }
 
-    Step "Configuring the LLM endpoint (ask + remember need one; explore does not)"
-    if (Select-String -Path $yaml -Pattern '^llm:' -Quiet -ErrorAction SilentlyContinue) {
-        Info "an llm: block already exists - leaving it untouched"
-    } else {
-        $apiBase = if ($env:MARGINALIA_LLM_API_BASE) { $env:MARGINALIA_LLM_API_BASE } else { "" }
-        $model = if ($env:MARGINALIA_LLM_MODEL) { $env:MARGINALIA_LLM_MODEL } else { "" }
-        if (-not $apiBase -or -not $model) {
-            Info "Point Marginalia at any OpenAI-compatible endpoint (LM Studio, Ollama, llama.cpp, vLLM, a remote box...)."
-            Info "Press Enter to skip - explore() works now; add the block later to enable ask()/remember()."
-            if (-not $apiBase) {
-                $apiBase = Prompt-Value "  LLM api_base URL:" "http://localhost:1234/v1"
-            }
-            if (-not $model -and $apiBase) {
-                $model = Pick-Model $apiBase
-            }
-        }
-        if ($apiBase -and $model) {
-            @"
-llm:
-  allow_remote: true
-  defaults:
-    provider: openai
-    api_base: $apiBase
-    model: $model
-    max_tokens: 16000
-    temperature: 0.7
-  extraction:
-    enable_thinking: false
-  judge:
-    temperature: 0.2
-    enable_thinking: false
-"@ | Add-Content -Path $yaml -Encoding utf8
-            Info "wrote llm: block -> $model @ $apiBase"
+    Step "Configuring provider and model with 'marginalia onboard'"
+    $onboardArgs = @("onboard", "--vault", $Vault)
+    if ($env:MARGINALIA_LLM_PROVIDER) {
+        $onboardArgs += @("--provider", $env:MARGINALIA_LLM_PROVIDER)
+    } elseif ([Console]::IsInputRedirected -or $env:MARGINALIA_ONBOARD_NONINTERACTIVE -eq "1") {
+        if ($env:MARGINALIA_LLM_API_BASE -or $env:MARGINALIA_LLM_MODEL) {
+            $onboardArgs += @("--provider", "custom")
         } else {
-            @"
-# llm:                       # uncomment + fill in to enable ask() / remember()
-#   allow_remote: true
-#   defaults:
-#     provider: openai
-#     api_base: http://localhost:1234/v1   # your OpenAI-compatible endpoint
-#     model: your-model-name
-#     max_tokens: 16000
-"@ | Add-Content -Path $yaml -Encoding utf8
-            Warn "no endpoint given - wrote a commented placeholder. ask()/remember() stay disabled until you edit $yaml"
+            $onboardArgs += @("--provider", "skip")
         }
     }
+    if ($env:MARGINALIA_LLM_API_BASE) {
+        $onboardArgs += @("--api-base", $env:MARGINALIA_LLM_API_BASE)
+    }
+    if ($env:MARGINALIA_LLM_MODEL) {
+        $onboardArgs += @("--model", $env:MARGINALIA_LLM_MODEL)
+    }
+    if ($env:MARGINALIA_LLM_API_KEY_ENV) {
+        $onboardArgs += @("--api-key-env", $env:MARGINALIA_LLM_API_KEY_ENV)
+    }
+    if ($env:MARGINALIA_LLM_SKIP_DISCOVERY -eq "1" -or $env:MARGINALIA_LLM_MODEL) {
+        $onboardArgs += "--skip-model-discovery"
+    }
+    if ($env:MARGINALIA_LLM_ALLOW_REMOTE -eq "1") {
+        $onboardArgs += @("--allow-remote-llm", "--yes")
+    }
+    if ([Console]::IsInputRedirected -or $env:MARGINALIA_ONBOARD_NONINTERACTIVE -eq "1") {
+        $onboardArgs += "--non-interactive"
+        Info "no interactive terminal detected - using noninteractive onboarding"
+    }
+    Run-Checked $marginalia $onboardArgs
 }
 
 $serveVault = $Vault
@@ -297,9 +245,6 @@ if ($env:MARGINALIA_NO_SERVE -eq "1") {
         Step "Restarting the daemon on the new version (vault: $vaultLabel)"
     } else {
         Step "Starting the Marginalia daemon (UI/REST :7777 + MCP :8201)"
-    }
-    if (-not $env:OPENAI_API_KEY) {
-        $env:OPENAI_API_KEY = "sk-no-key-required"
     }
     Run-Checked $marginalia @("serve", "--daemon", "--vault", $serveVault)
     Info "waiting for the server to come up ..."
