@@ -92,27 +92,31 @@ install-only smoke test and delete the sandbox afterward:
 ./test-install.sh --api-base http://localhost:1234/v1 --model my-model --no-serve --cleanup
 ```
 
-Canonical human-prompt tests use tmux and still install from the raw URL:
+Canonical human-prompt tests use tmux and still install from the raw URL. These
+examples keep the sandbox so the `capture-pane` evidence remains; add
+`--cleanup` only for throwaway smoke runs.
 
 ```bash
 # Fresh Linux image in Docker, prompts driven through tmux.
-./test-install.sh --docker-tmux --profile skip --cleanup
-./test-install.sh --docker-tmux --profile auto-lm-studio --cleanup
-./test-install.sh --docker-tmux --profile lm-studio --cleanup
-./test-install.sh --docker-tmux --profile ollama --cleanup
-./test-install.sh --docker-tmux --profile litellm --cleanup
-./test-install.sh --docker-tmux --profile hosted-openai --cleanup
-./test-install.sh --docker-tmux --profile hosted-openrouter --cleanup
-./test-install.sh --docker-tmux --profile hosted-gemini --cleanup
-./test-install.sh --docker-tmux --profile hosted-anthropic --cleanup
-./test-install.sh --docker-tmux --profile existing-keep --cleanup
-./test-install.sh --docker-tmux --profile existing-inspect --cleanup
-./test-install.sh --docker-tmux --profile existing-reconfigure --cleanup
-./test-install.sh --docker-tmux --profile disable-llm --cleanup
+./test-install.sh --docker-tmux --profile skip
+./test-install.sh --docker-tmux --profile auto-lm-studio
+./test-install.sh --docker-tmux --profile lm-studio
+./test-install.sh --docker-tmux --profile ollama
+./test-install.sh --docker-tmux --profile litellm
+./test-install.sh --docker-tmux --profile hosted-openai
+./test-install.sh --docker-tmux --profile hosted-openrouter
+./test-install.sh --docker-tmux --profile hosted-gemini
+./test-install.sh --docker-tmux --profile hosted-anthropic
+./test-install.sh --docker-tmux --profile existing-keep
+./test-install.sh --docker-tmux --profile existing-inspect
+./test-install.sh --docker-tmux --profile existing-reconfigure
+./test-install.sh --docker-tmux --profile disable-llm
+./test-install.sh --docker-tmux --profile custom --api-base http://127.0.0.1:1234/v1 --model docker-custom-human-model
 
 # macOS/Linux host with isolated HOME, prompts driven through tmux.
-./test-install.sh --tmux --profile skip --cleanup
-./test-install.sh --tmux --profile lm-studio --cleanup
+./test-install.sh --tmux --profile skip
+./test-install.sh --tmux --profile existing-inspect
+./test-install.sh --tmux --profile custom --api-base http://127.0.0.1:8123/v1 --model macos-custom-human-model
 ```
 
 The scripted profiles cover skip, auto-detect, LM Studio, Ollama, LiteLLM
