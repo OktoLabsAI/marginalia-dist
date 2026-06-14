@@ -398,6 +398,7 @@ marginalia --help | sed -n '1,12p'
 marginalia vault current
 if [ "$NO_SERVE" != "1" ]; then
   curl -fsS http://127.0.0.1:7777/health
+  printf '\n'
 fi
 YAML="$HOME/.marginalia/vaults/$VAULT/marginalia.yaml"
 case "$PROFILE" in
@@ -646,6 +647,7 @@ marginalia --help | sed -n '1,12p'
 marginalia vault current
 if [ "$NO_SERVE" != "1" ]; then
   curl -fsS http://127.0.0.1:7777/health
+  printf '\n'
 fi
 YAML="$HOME/.marginalia/vaults/$VAULT/marginalia.yaml"
 case "$PROFILE" in
