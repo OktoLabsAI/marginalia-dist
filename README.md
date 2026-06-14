@@ -104,8 +104,27 @@ Canonical human-prompt tests use tmux and still install from the raw URL:
 ```
 
 Each tmux run writes `capture-pane` evidence under the sandbox directory.
-Windows coverage must be driven in a real Windows PowerShell terminal; Docker or
-macOS PowerShell parsing is not a substitute.
+
+Windows uses a matching PowerShell tester. Run it from a real Windows
+PowerShell terminal, not from macOS/Linux PowerShell or Docker:
+
+```powershell
+.\test-install.ps1
+```
+
+The Windows tester starts a child PowerShell with an isolated `HOME`,
+`USERPROFILE`, `APPDATA`, `LOCALAPPDATA`, `XDG_*`, and `UV_CACHE_DIR`, disables
+Claude MCP registration, runs the public raw `install.ps1` URL, and writes a
+transcript under the sandbox. The transcript must show the public URL and
+`INPUT_REDIRECTED=False`; then drive the provider prompt like a user. For a
+noninteractive smoke check:
+
+```powershell
+.\test-install.ps1 -Profile skip -Cleanup
+```
+
+Windows coverage must be driven in a real Windows PowerShell terminal; Docker,
+script parsing, or macOS/Linux PowerShell is not a substitute.
 
 ## After install
 
