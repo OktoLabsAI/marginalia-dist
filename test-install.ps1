@@ -163,6 +163,18 @@ try {
     if ($Profile -eq "skip" -and (Select-String -Path $yaml -Pattern "^\s*llm:" -Quiet)) {
         throw "skip profile wrote an explicit llm block"
     }
+    if ($Profile -eq "custom") {
+        if (-not (Select-String -Path $yaml -Pattern "^\s*provider:\s*openai\s*$" -Quiet)) {
+            throw "custom profile did not write provider: openai"
+        }
+        if (-not (Select-String -Path $yaml -SimpleMatch "api_base: $ApiBase" -Quiet)) {
+            throw "custom profile did not write api_base: $ApiBase"
+        }
+        if (-not (Select-String -Path $yaml -SimpleMatch "model: $Model" -Quiet)) {
+            throw "custom profile did not write model: $Model"
+        }
+        Write-Host "WINDOWS_CUSTOM_PROFILE_OK"
+    }
     Write-Host "WINDOWS_PUBLIC_INSTALL_TEST_OK"
 } finally {
     Stop-Transcript

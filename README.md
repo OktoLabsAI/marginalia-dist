@@ -98,12 +98,18 @@ Canonical human-prompt tests use tmux and still install from the raw URL:
 # Fresh Linux image in Docker, prompts driven through tmux.
 ./test-install.sh --docker-tmux --profile skip --cleanup
 ./test-install.sh --docker-tmux --profile lm-studio --cleanup
+./test-install.sh --docker-tmux --profile ollama --cleanup
+./test-install.sh --docker-tmux --profile litellm --cleanup
+./test-install.sh --docker-tmux --profile hosted-openai --cleanup
 
 # macOS/Linux host with isolated HOME, prompts driven through tmux.
 ./test-install.sh --tmux --profile skip --cleanup
+./test-install.sh --tmux --profile lm-studio --cleanup
 ```
 
-Each tmux run writes `capture-pane` evidence under the sandbox directory.
+The scripted profiles cover skip, LM Studio, Ollama, LiteLLM Proxy, hosted
+OpenAI with a fake exported key and manual model, and custom endpoints. Each
+tmux run writes `capture-pane` evidence under the sandbox directory.
 
 Windows uses a matching PowerShell tester. Run it from a real Windows
 PowerShell terminal, not from macOS/Linux PowerShell or Docker:
@@ -121,10 +127,12 @@ noninteractive smoke check:
 
 ```powershell
 .\test-install.ps1 -Profile skip -Cleanup
+.\test-install.ps1 -Profile custom -ApiBase http://127.0.0.1:8123/v1 -Model local-model -NoServe -Cleanup
 ```
 
 Windows coverage must be driven in a real Windows PowerShell terminal; Docker,
-script parsing, or macOS/Linux PowerShell is not a substitute.
+script parsing, or macOS/Linux PowerShell is not a substitute. The custom
+profile command is a noninteractive YAML smoke check, not prompt coverage.
 
 ## After install
 

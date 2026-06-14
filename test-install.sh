@@ -38,6 +38,9 @@ Modes:
 Profiles for tmux modes:
   --profile skip       Choose "Skip LLM setup"; verifies no explicit llm block.
   --profile lm-studio  Start a mock LM Studio /v1/models endpoint and choose it.
+  --profile ollama     Start a mock Ollama OpenAI-compatible endpoint and choose it.
+  --profile litellm    Start a mock LiteLLM Proxy model-info endpoint and choose it.
+  --profile hosted-openai  Choose OpenAI with a fake exported key and manual model.
   --profile custom     Choose custom endpoint; requires --api-base and --model.
   --profile interactive  Do not auto-drive prompts; print tmux attach command.
 
@@ -138,11 +141,14 @@ while [ "$#" -gt 0 ]; do
 done
 
 case "$PROFILE" in
-  interactive|skip|lm-studio|custom) ;;
+  interactive|skip|lm-studio|ollama|litellm|hosted-openai|custom) ;;
   *) die "unknown profile: $PROFILE" ;;
 esac
 if [ "$PROFILE" = "custom" ] && { [ -z "$API_BASE" ] || [ -z "$MODEL" ]; }; then
   die "--profile custom requires --api-base and --model"
+fi
+if [ "$PROFILE" = "hosted-openai" ] && [ -z "$MODEL" ]; then
+  MODEL="hosted-human-model"
 fi
 
 command -v curl >/dev/null 2>&1 || die "curl is required"
@@ -240,6 +246,84 @@ PY
   exit 80
 }
 
+start_mock_ollama() {
+  python3 - <<'PY' &
+import json
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+MODEL = "mac-ollama-human-model"
+
+class Handler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path.rstrip("/") == "/v1/models":
+            body = json.dumps({"data": [{"id": MODEL}]}).encode()
+            self.send_response(200)
+            self.send_header("content-type", "application/json")
+            self.send_header("content-length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        self.send_response(404)
+        self.end_headers()
+    def log_message(self, *_args):
+        return
+
+ThreadingHTTPServer(("127.0.0.1", 11434), Handler).serve_forever()
+PY
+  MOCK_PID="$!"
+  trap 'kill "$MOCK_PID" >/dev/null 2>&1 || true' EXIT
+  for _ in $(seq 1 30); do
+    curl -fsS http://127.0.0.1:11434/v1/models >/dev/null 2>&1 && return
+    sleep 0.2
+  done
+  echo "mock Ollama server did not start" >&2
+  exit 80
+}
+
+start_mock_litellm() {
+  python3 - <<'PY' &
+import json
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+MODEL = "mac-litellm-human-model"
+
+class Handler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path.rstrip("/") == "/v1/model/info":
+            body = json.dumps({
+                "data": [
+                    {
+                        "model_name": MODEL,
+                        "litellm_params": {
+                            "model": "openai/hidden-upstream",
+                            "api_key": "should-not-surface"
+                        }
+                    }
+                ]
+            }).encode()
+            self.send_response(200)
+            self.send_header("content-type", "application/json")
+            self.send_header("content-length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        self.send_response(404)
+        self.end_headers()
+    def log_message(self, *_args):
+        return
+
+ThreadingHTTPServer(("127.0.0.1", 4000), Handler).serve_forever()
+PY
+  MOCK_PID="$!"
+  trap 'kill "$MOCK_PID" >/dev/null 2>&1 || true' EXIT
+  for _ in $(seq 1 30); do
+    curl -fsS http://127.0.0.1:4000/v1/model/info >/dev/null 2>&1 && return
+    sleep 0.2
+  done
+  echo "mock LiteLLM server did not start" >&2
+  exit 80
+}
+
 export HOME="$TEST_HOME"
 export XDG_DATA_HOME="$HOME/.local/share"
 export XDG_CACHE_HOME="$HOME/.cache"
@@ -251,6 +335,14 @@ export MARGINALIA_VAULT="$VAULT"
 
 if [ "$PROFILE" = "lm-studio" ]; then
   start_mock_lm_studio
+elif [ "$PROFILE" = "ollama" ]; then
+  start_mock_ollama
+elif [ "$PROFILE" = "litellm" ]; then
+  start_mock_litellm
+elif [ "$PROFILE" = "hosted-openai" ]; then
+  export MARGINALIA_LLM_MODEL="$MODEL"
+  export MARGINALIA_LLM_API_KEY_ENV=MARGINALIA_HOSTED_TEST_KEY
+  export MARGINALIA_HOSTED_TEST_KEY=sk-fake-public-installer-test
 fi
 
 printf 'TEST_HOME=%s\nINSTALL_URL=%s\nPROFILE=%s\n' "$HOME" "$INSTALL_URL" "$PROFILE"
@@ -270,6 +362,22 @@ case "$PROFILE" in
   lm-studio)
     grep -q 'provider: lm_studio' "$YAML"
     grep -q 'mac-human-model' "$YAML"
+    ;;
+  ollama)
+    grep -q 'provider: ollama' "$YAML"
+    grep -q 'mac-ollama-human-model' "$YAML"
+    ;;
+  litellm)
+    grep -q 'provider: litellm_proxy' "$YAML"
+    grep -q 'api_base: http://127.0.0.1:4000' "$YAML"
+    grep -q 'mac-litellm-human-model' "$YAML"
+    ! grep -q 'should-not-surface' "$YAML"
+    ;;
+  hosted-openai)
+    grep -q 'provider: openai' "$YAML"
+    grep -q "$MODEL" "$YAML"
+    grep -q 'api_key_env: MARGINALIA_HOSTED_TEST_KEY' "$YAML"
+    ! grep -q 'sk-fake-public-installer-test' "$YAML"
     ;;
   custom)
     grep -q "$MODEL" "$YAML"
@@ -325,12 +433,98 @@ PY
   exit 80
 }
 
+start_mock_ollama() {
+  python3 - <<'PY' &
+import json
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+MODEL = "docker-ollama-human-model"
+
+class Handler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path.rstrip("/") == "/v1/models":
+            body = json.dumps({"data": [{"id": MODEL}]}).encode()
+            self.send_response(200)
+            self.send_header("content-type", "application/json")
+            self.send_header("content-length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        self.send_response(404)
+        self.end_headers()
+    def log_message(self, *_args):
+        return
+
+ThreadingHTTPServer(("127.0.0.1", 11434), Handler).serve_forever()
+PY
+  MOCK_PID="$!"
+  trap 'kill "$MOCK_PID" >/dev/null 2>&1 || true' EXIT
+  for _ in $(seq 1 30); do
+    curl -fsS http://127.0.0.1:11434/v1/models >/dev/null 2>&1 && return
+    sleep 0.2
+  done
+  echo "mock Ollama server did not start" >&2
+  exit 80
+}
+
+start_mock_litellm() {
+  python3 - <<'PY' &
+import json
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+MODEL = "docker-litellm-human-model"
+
+class Handler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path.rstrip("/") == "/v1/model/info":
+            body = json.dumps({
+                "data": [
+                    {
+                        "model_name": MODEL,
+                        "litellm_params": {
+                            "model": "openai/hidden-upstream",
+                            "api_key": "should-not-surface"
+                        }
+                    }
+                ]
+            }).encode()
+            self.send_response(200)
+            self.send_header("content-type", "application/json")
+            self.send_header("content-length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        self.send_response(404)
+        self.end_headers()
+    def log_message(self, *_args):
+        return
+
+ThreadingHTTPServer(("127.0.0.1", 4000), Handler).serve_forever()
+PY
+  MOCK_PID="$!"
+  trap 'kill "$MOCK_PID" >/dev/null 2>&1 || true' EXIT
+  for _ in $(seq 1 30); do
+    curl -fsS http://127.0.0.1:4000/v1/model/info >/dev/null 2>&1 && return
+    sleep 0.2
+  done
+  echo "mock LiteLLM server did not start" >&2
+  exit 80
+}
+
 export MARGINALIA_NO_MCP=1
 export MARGINALIA_VAULT="$VAULT"
 [ "$NO_SERVE" = "1" ] && export MARGINALIA_NO_SERVE=1
 
 if [ "$PROFILE" = "lm-studio" ]; then
   start_mock_lm_studio
+elif [ "$PROFILE" = "ollama" ]; then
+  start_mock_ollama
+elif [ "$PROFILE" = "litellm" ]; then
+  start_mock_litellm
+elif [ "$PROFILE" = "hosted-openai" ]; then
+  export MARGINALIA_LLM_MODEL="$MODEL"
+  export MARGINALIA_LLM_API_KEY_ENV=MARGINALIA_HOSTED_TEST_KEY
+  export MARGINALIA_HOSTED_TEST_KEY=sk-fake-public-installer-test
 fi
 
 printf 'INSTALL_URL=%s\nPROFILE=%s\n' "$INSTALL_URL" "$PROFILE"
@@ -350,6 +544,22 @@ case "$PROFILE" in
   lm-studio)
     grep -q 'provider: lm_studio' "$YAML"
     grep -q 'docker-human-model' "$YAML"
+    ;;
+  ollama)
+    grep -q 'provider: ollama' "$YAML"
+    grep -q 'docker-ollama-human-model' "$YAML"
+    ;;
+  litellm)
+    grep -q 'provider: litellm_proxy' "$YAML"
+    grep -q 'api_base: http://127.0.0.1:4000' "$YAML"
+    grep -q 'docker-litellm-human-model' "$YAML"
+    ! grep -q 'should-not-surface' "$YAML"
+    ;;
+  hosted-openai)
+    grep -q 'provider: openai' "$YAML"
+    grep -q "$MODEL" "$YAML"
+    grep -q 'api_key_env: MARGINALIA_HOSTED_TEST_KEY' "$YAML"
+    ! grep -q 'sk-fake-public-installer-test' "$YAML"
     ;;
   custom)
     grep -q "$MODEL" "$YAML"
@@ -401,6 +611,36 @@ drive_profile() {
       wait_for_text "API key" 120
       tmux send-keys -t "$SESSION" C-m
       wait_for_text "Model" 120
+      tmux send-keys -t "$SESSION" C-m
+      ;;
+    ollama)
+      wait_for_text "Provider" 900
+      tmux send-keys -t "$SESSION" "3" C-m
+      wait_for_text "Base URL" 120
+      tmux send-keys -t "$SESSION" C-m
+      wait_for_text "API key" 120
+      tmux send-keys -t "$SESSION" C-m
+      wait_for_text "Model" 120
+      tmux send-keys -t "$SESSION" C-m
+      ;;
+    litellm)
+      wait_for_text "Provider" 900
+      tmux send-keys -t "$SESSION" "4" C-m
+      wait_for_text "Base URL" 120
+      tmux send-keys -t "$SESSION" C-m
+      wait_for_text "API key" 120
+      tmux send-keys -t "$SESSION" C-m
+      wait_for_text "Model" 120
+      tmux send-keys -t "$SESSION" C-m
+      ;;
+    hosted-openai)
+      wait_for_text "Provider" 900
+      tmux send-keys -t "$SESSION" "6" C-m
+      wait_for_text "Base URL" 120
+      tmux send-keys -t "$SESSION" C-m
+      wait_for_text "Allow this endpoint?" 120
+      tmux send-keys -t "$SESSION" "y" C-m
+      wait_for_text "API key" 120
       tmux send-keys -t "$SESSION" C-m
       ;;
     custom)
@@ -464,6 +704,11 @@ run_host_tmux() {
   if [ "$PROFILE" != "interactive" ]; then
     wait_for_text "MAC_TMUX_HUMAN_INSTALL_OK" 1800
     capture
+    if [ "$PROFILE" = "hosted-openai" ]; then
+      if grep -q 'sk-fake-public-installer-test' "$EVIDENCE"; then
+        die "fake hosted secret leaked into tmux evidence: $EVIDENCE"
+      fi
+    fi
     printf 'tmux host install passed. Evidence: %s\n' "$EVIDENCE"
   fi
 }
@@ -480,6 +725,11 @@ run_docker_tmux() {
   if [ "$PROFILE" != "interactive" ]; then
     wait_for_text "DOCKER_TMUX_HUMAN_INSTALL_OK" 2400
     capture
+    if [ "$PROFILE" = "hosted-openai" ]; then
+      if grep -q 'sk-fake-public-installer-test' "$EVIDENCE"; then
+        die "fake hosted secret leaked into tmux evidence: $EVIDENCE"
+      fi
+    fi
     printf 'Docker tmux install passed. Evidence: %s\n' "$EVIDENCE"
   fi
 }
