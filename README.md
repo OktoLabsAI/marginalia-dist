@@ -75,6 +75,43 @@ $env:MARGINALIA_ONBOARD_NONINTERACTIVE = "1"
 powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/OktoLabsAI/marginalia-dist/main/install.ps1 | iex"
 ```
 
+## Direct AWS Bedrock
+
+The public installer stays provider-neutral by default: it installs
+`embeddings,ladybug,mcp,litellm`, creates or selects the vault, and delegates
+provider setup to `marginalia onboard`. It does not install AWS SDK dependencies
+or write Bedrock-specific `llm:` YAML.
+
+If you configure direct `provider: bedrock` and Marginalia reports that `boto3`
+is missing, reinstall the tool with the opt-in `bedrock` extra, then rerun
+onboarding for the same vault:
+
+```bash
+marginalia stop --vault mynotes || true
+uv tool install --force --python 3.12 \
+  "marginalia[embeddings,ladybug,mcp,litellm,bedrock]"
+marginalia onboard --vault mynotes --reconfigure
+```
+
+```powershell
+marginalia stop --vault mynotes
+uv tool install --force --python 3.12 "marginalia[embeddings,ladybug,mcp,litellm,bedrock]"
+marginalia onboard --vault mynotes --reconfigure
+```
+
+If you installed from a specific `MARGINALIA_WHEEL` or `MARGINALIA_SRC`, reuse
+that same wheel URL or source checkout and add `bedrock` to the extras list, for
+example:
+
+```bash
+uv tool install --force --python 3.12 \
+  "<wheel-url>[embeddings,ladybug,mcp,litellm,bedrock]"
+```
+
+AWS credentials and any remote endpoint approval remain outside the installer.
+Use `marginalia onboard` for provider/model configuration, and pass
+`--allow-remote-llm --yes` only for explicit noninteractive remote setup.
+
 ## Safe Onboarding Test
 
 To test the full macOS/Linux onboarding flow without touching your real
