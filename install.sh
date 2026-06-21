@@ -2,11 +2,7 @@
 #
 # Marginalia one-shot installer.
 #
-#   curl -fsSL https://raw.githubusercontent.com/OktoLabsAI/marginalia-dist/main/install.sh | bash
-#
-# Windows users should use install.ps1 from this same repo:
-#
-#   powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/OktoLabsAI/marginalia-dist/main/install.ps1 | iex"
+#   curl -fsSL https://<dist-host>/install.sh | bash
 #
 # Takes a fresh machine from zero to a running Marginalia daemon wired into
 # Claude Code:  prereqs → install tool → create vault → configure LLM →
@@ -21,30 +17,17 @@
 #   MARGINALIA_REF          git ref to check out (default: repo default branch)
 #   MARGINALIA_VAULT        vault name         (default: mynotes)
 #   MARGINALIA_PACKS        type packs         (default: core,research,personal)
-#   MARGINALIA_LLM_PROVIDER provider id for `marginalia onboard`
-#   MARGINALIA_LLM_API_BASE provider base URL
-#   MARGINALIA_LLM_MODEL    model name
-#   MARGINALIA_LLM_API_KEY_ENV MARGINALIA_* env var name for the provider key
-#   MARGINALIA_LLM_SKIP_DISCOVERY=1 skip model discovery
-#   MARGINALIA_LLM_ALLOW_REMOTE=1 confirm non-loopback provider egress
+#   MARGINALIA_LLM_API_BASE OpenAI-compatible base URL (skips the prompt)
+#   MARGINALIA_LLM_MODEL    model name                 (skips the prompt)
 #   MARGINALIA_NO_SERVE=1   install + configure only; don't start the daemon
 #   MARGINALIA_NO_MCP=1     don't run `claude mcp add`
 #
 set -euo pipefail
 
-case "${OS:-}:$(uname -s 2>/dev/null || true)" in
-  Windows_NT:*|*:CYGWIN*|*:MINGW*|*:MSYS*)
-    printf "%s\n" "This Bash installer is for macOS/Linux."
-    printf "%s\n" "On Windows, run:"
-    printf "%s\n" "  powershell -NoProfile -ExecutionPolicy Bypass -Command \"irm https://raw.githubusercontent.com/OktoLabsAI/marginalia-dist/main/install.ps1 | iex\""
-    exit 1
-    ;;
-esac
-
 # ── config ────────────────────────────────────────────────────────────────
 # The public distribution copy of this script bakes a release-wheel URL here so
 # `curl … | bash` needs no env. Empty in the source repo (which clones instead).
-DEFAULT_WHEEL_URL="${MARGINALIA_DEFAULT_WHEEL_URL:-https://github.com/OktoLabsAI/marginalia-dist/releases/download/v0.0.23/marginalia-0.0.23-py3-none-any.whl}"
+DEFAULT_WHEEL_URL="${MARGINALIA_DEFAULT_WHEEL_URL:-https://github.com/OktoLabsAI/marginalia-dist/releases/download/v0.0.24/marginalia-0.0.24-py3-none-any.whl}"
 EXTRAS="embeddings,ladybug,mcp,litellm"
 PY_VERSION="3.12"
 REPO="${MARGINALIA_REPO:-git@github.com:OktoLabsAI/marginalia.git}"
@@ -57,12 +40,58 @@ REST_URL="http://127.0.0.1:7777"
 MCP_URL="http://127.0.0.1:8201/mcp"
 
 # ── pretty logging ────────────────────────────────────────────────────────
-if [ -t 1 ]; then B=$'\033[1m'; G=$'\033[32m'; Y=$'\033[33m'; R=$'\033[31m'; X=$'\033[0m'
-else B=""; G=""; Y=""; R=""; X=""; fi
+if [ -t 1 ]; then B=$'\033[1m'; G=$'\033[32m'; Y=$'\033[33m'; R=$'\033[31m'; D=$'\033[2m'; X=$'\033[0m'
+else B=""; G=""; Y=""; R=""; D=""; X=""; fi
 step() { printf "\n%s==>%s %s%s%s\n" "$B$G" "$X" "$B" "$1" "$X"; }
 info() { printf "    %s\n" "$1"; }
 warn() { printf "%s !! %s%s\n" "$Y" "$1" "$X"; }
 die()  { printf "%serror:%s %s\n" "$R" "$X" "$1" >&2; exit 1; }
+
+# Read a value from the real terminal even when stdin is the piped script.
+prompt() { # prompt <var> <message> [default]
+  local __var="$1" __msg="$2" __def="${3:-}" __ans=""
+  if [ -e /dev/tty ]; then
+    printf "%s%s%s " "$B" "$__msg" "$X" > /dev/tty
+    [ -n "$__def" ] && printf "%s[%s]%s " "$D" "$__def" "$X" > /dev/tty
+    IFS= read -r __ans < /dev/tty || __ans=""
+  fi
+  printf -v "$__var" '%s' "${__ans:-$__def}"
+}
+
+# Query an OpenAI-compatible endpoint for its models and let the user pick one by
+# number, or type a name. Sets the named variable. Falls back to a free-text
+# prompt when the endpoint can't be listed (unreachable / no /v1/models).
+pick_model() { # pick_model <var> <api_base>
+  # NOTE: use __sel (not __ans) for the selection — prompt() has its own local
+  # __ans, and `printf -v __ans` there would write to prompt's local, not ours.
+  local __var="$1" __base="${2%/}" __json="" __ids="" __sel="" __n=0
+  __json="$(curl -fsS -m 8 "${__base}/models" 2>/dev/null || true)"
+  if [ -n "${__json}" ] && command -v python3 >/dev/null 2>&1; then
+    __ids="$(printf '%s' "${__json}" | python3 -c 'import sys,json
+try: d=json.load(sys.stdin)
+except Exception: sys.exit(0)
+data=d.get("data") if isinstance(d,dict) else None
+[print(m["id"]) for m in (data or []) if isinstance(m,dict) and m.get("id")]' 2>/dev/null)"
+  fi
+  if [ -n "${__ids}" ]; then
+    info "models available at ${__base}:"
+    local IFS=$'\n'; local __arr=(); local __m
+    for __m in ${__ids}; do __arr+=("$__m"); done
+    unset IFS
+    __n=0
+    for __m in "${__arr[@]}"; do __n=$((__n+1)); printf "      %s%2d)%s %s\n" "$B" "$__n" "$X" "$__m" > /dev/tty 2>/dev/null || printf "      %2d) %s\n" "$__n" "$__m"; done
+    prompt __sel "  Pick a number, or type a model name:" "1"
+    case "${__sel}" in
+      ''|*[!0-9]*) printf -v "$__var" '%s' "${__sel}" ;;  # non-numeric → typed name
+      *) if [ "${__sel}" -ge 1 ] && [ "${__sel}" -le "${#__arr[@]}" ] 2>/dev/null; then
+           printf -v "$__var" '%s' "${__arr[$((__sel-1))]}"
+         else printf -v "$__var" '%s' "${__sel}"; fi ;;
+    esac
+  else
+    warn "couldn't list models from ${__base}/models — enter the name manually"
+    prompt "$__var" "  LLM model name:" ""
+  fi
+}
 
 printf "%s\n" "${B}Marginalia installer${X} — local-first knowledge graph for Claude Code"
 
@@ -166,33 +195,50 @@ else
   info "created ${VAULT_DIR}"
 fi
 
-# ── 5. provider/model onboarding ──────────────────────────────────────────
-step "Configuring provider and model with 'marginalia onboard'"
-ONBOARD_ARGS=(onboard --vault "${VAULT}")
-if [ -n "${MARGINALIA_LLM_PROVIDER:-}" ]; then
-  ONBOARD_ARGS+=(--provider "${MARGINALIA_LLM_PROVIDER}")
-elif [ ! -e /dev/tty ] || [ "${MARGINALIA_ONBOARD_NONINTERACTIVE:-}" = "1" ]; then
-  if [ -n "${MARGINALIA_LLM_API_BASE:-}" ] || [ -n "${MARGINALIA_LLM_MODEL:-}" ]; then
-    ONBOARD_ARGS+=(--provider custom)
-  else
-    ONBOARD_ARGS+=(--provider skip)
-  fi
-fi
-[ -n "${MARGINALIA_LLM_API_BASE:-}" ] && ONBOARD_ARGS+=(--api-base "${MARGINALIA_LLM_API_BASE}")
-[ -n "${MARGINALIA_LLM_MODEL:-}" ] && ONBOARD_ARGS+=(--model "${MARGINALIA_LLM_MODEL}")
-[ -n "${MARGINALIA_LLM_API_KEY_ENV:-}" ] && ONBOARD_ARGS+=(--api-key-env "${MARGINALIA_LLM_API_KEY_ENV}")
-if [ "${MARGINALIA_LLM_SKIP_DISCOVERY:-}" = "1" ] || [ -n "${MARGINALIA_LLM_MODEL:-}" ]; then
-  ONBOARD_ARGS+=(--skip-model-discovery)
-fi
-if [ "${MARGINALIA_LLM_ALLOW_REMOTE:-}" = "1" ]; then
-  ONBOARD_ARGS+=(--allow-remote-llm --yes)
-fi
-if [ ! -e /dev/tty ] || [ "${MARGINALIA_ONBOARD_NONINTERACTIVE:-}" = "1" ]; then
-  ONBOARD_ARGS+=(--non-interactive)
-  info "no interactive terminal detected — using noninteractive onboarding"
-  marginalia "${ONBOARD_ARGS[@]}"
+# ── 5. LLM endpoint (needed for ask + remember) ───────────────────────────
+step "Configuring the LLM endpoint (ask + remember need one; explore does not)"
+YAML="${VAULT_DIR}/marginalia.yaml"
+if grep -q '^llm:' "${YAML}" 2>/dev/null; then
+  info "an llm: block already exists — leaving it untouched"
 else
-  marginalia "${ONBOARD_ARGS[@]}" < /dev/tty
+  API_BASE="${MARGINALIA_LLM_API_BASE:-}"
+  MODEL="${MARGINALIA_LLM_MODEL:-}"
+  if [ -z "${API_BASE}" ] || [ -z "${MODEL}" ]; then
+    info "Point Marginalia at any OpenAI-compatible endpoint (LM Studio, Ollama, llama.cpp, vLLM, a remote box...)."
+    info "Press Enter to skip — explore() works now; add the block later to enable ask()/remember()."
+    [ -z "${API_BASE}" ] && prompt API_BASE "  LLM api_base URL:" "http://localhost:1234/v1"
+    # List the endpoint's models (pick by number) instead of blind free-text.
+    [ -z "${MODEL}" ] && [ -n "${API_BASE}" ] && pick_model MODEL "${API_BASE}"
+  fi
+  if [ -n "${API_BASE}" ] && [ -n "${MODEL}" ]; then
+    cat >> "${YAML}" <<EOF
+llm:
+  allow_remote: true
+  defaults:
+    provider: openai
+    api_base: ${API_BASE}
+    model: ${MODEL}
+    max_tokens: 16000
+    temperature: 0.7
+  extraction:
+    enable_thinking: false
+  judge:
+    temperature: 0.2
+    enable_thinking: false
+EOF
+    info "wrote llm: block → ${MODEL} @ ${API_BASE}"
+  else
+    cat >> "${YAML}" <<'EOF'
+# llm:                       # ← uncomment + fill in to enable ask() / remember()
+#   allow_remote: true
+#   defaults:
+#     provider: openai
+#     api_base: http://localhost:1234/v1   # your OpenAI-compatible endpoint
+#     model: your-model-name
+#     max_tokens: 16000
+EOF
+    warn "no endpoint given — wrote a commented placeholder. ask()/remember() stay disabled until you edit ${YAML}"
+  fi
 fi
 fi  # end fresh-install (vault + LLM) block
 
@@ -213,6 +259,12 @@ else
   else
     step "Starting the Marginalia daemon (UI/REST :7777 + MCP :8201)"
   fi
+  # Safety net: many local OpenAI-compatible LLM/embedding servers are keyless,
+  # but litellm still requires SOME api_key or it errors "Missing credentials".
+  # The app sends a placeholder for custom endpoints, but we also give the daemon
+  # a default key in its environment so every path (incl. remote embeddings) is
+  # covered. A real key already in the environment is never overwritten.
+  export OPENAI_API_KEY="${OPENAI_API_KEY:-sk-no-key-required}"
   marginalia serve --daemon --vault "${SERVE_VAULT}"
   info "waiting for the server to come up ..."
   up=""
