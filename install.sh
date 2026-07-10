@@ -112,10 +112,29 @@ if curl -fs "${REST_URL}/health" >/dev/null 2>&1; then
     marginalia stop --vault "${HOME}/.marginalia/runtime" >/dev/null 2>&1 \
       || marginalia stop --vault "${RESTART_VAULT}" >/dev/null 2>&1 || true
   fi
-  for _ in $(seq 1 15); do
-    curl -fs "${REST_URL}/health" >/dev/null 2>&1 || break
-    sleep 1
+  # Wait for the daemon to actually EXIT, not just for /health to go quiet: a
+  # busy daemon drains in-flight ingest work on shutdown (minutes on dense
+  # items) and `marginalia serve` below refuses to start while the old pid is
+  # alive (stale-restart edge observed live on 2026-07-10). Watch the pid file.
+  PID_FILE=""
+  [ -n "${RESTART_VAULT}" ] && PID_FILE="${RESTART_VAULT}/.marginalia/server.pid"
+  for _ in $(seq 1 120); do
+    curl -fs "${REST_URL}/health" >/dev/null 2>&1 && { sleep 1; continue; }
+    if [ -n "${PID_FILE}" ] && [ -f "${PID_FILE}" ]; then
+      OLD_PID="$(cat "${PID_FILE}" 2>/dev/null || true)"
+      if [ -n "${OLD_PID}" ] && kill -0 "${OLD_PID}" 2>/dev/null; then sleep 1; continue; fi
+    fi
+    break
   done
+  if [ -n "${PID_FILE}" ] && [ -f "${PID_FILE}" ]; then
+    OLD_PID="$(cat "${PID_FILE}" 2>/dev/null || true)"
+    if [ -n "${OLD_PID}" ] && kill -0 "${OLD_PID}" 2>/dev/null; then
+      warn "the old daemon (pid ${OLD_PID}) is still draining after 120s — not forcing it."
+      warn "when it finishes, restart manually: marginalia serve --daemon --vault ${RESTART_VAULT}"
+      MARGINALIA_NO_SERVE=1
+      DRAIN_TIMED_OUT="1"
+    fi
+  fi
   info "stopped the running daemon — it will restart on the new version below"
 elif command -v marginalia >/dev/null 2>&1 || ls "${HOME_ROOT}/vaults"/*/marginalia.yaml >/dev/null 2>&1; then
   # Daemon isn't up (crashed, machine rebooted, whatever) but this machine was
@@ -216,6 +235,7 @@ fi
 # MARGINALIA_NO_SERVE=1 (never attempted) and UPGRADE (already known-good) are
 # not failures. Only a failed health wait below flips it.
 SERVE_OK="1"
+DRAIN_TIMED_OUT="${DRAIN_TIMED_OUT:-}"
 DAEMON_LOG="${HOME_ROOT}/logs/marginalia-serve.log"
 if [ "${MARGINALIA_NO_SERVE:-}" = "1" ]; then
   step "Skipping daemon start (MARGINALIA_NO_SERVE=1)"
