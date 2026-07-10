@@ -434,6 +434,9 @@ export XDG_CACHE_HOME="$HOME/.cache"
 export XDG_CONFIG_HOME="$HOME/.config"
 export UV_CACHE_DIR="$HOME/.cache/uv"
 export MARGINALIA_NO_MCP=1
+# HOME is redirected here but never let a sandbox run persist PATH via
+# uv tool update-shell regardless.
+export MARGINALIA_NO_UPDATE_SHELL=1
 export MARGINALIA_VAULT="$VAULT"
 [ "$NO_SERVE" = "1" ] && export MARGINALIA_NO_SERVE=1
 
@@ -683,6 +686,9 @@ YAML
 }
 
 export MARGINALIA_NO_MCP=1
+# Ephemeral container, but stay consistent - never persist PATH via
+# uv tool update-shell in a sandbox run.
+export MARGINALIA_NO_UPDATE_SHELL=1
 export MARGINALIA_VAULT="$VAULT"
 [ "$NO_SERVE" = "1" ] && export MARGINALIA_NO_SERVE=1
 
@@ -955,6 +961,9 @@ run_direct() {
     export XDG_CONFIG_HOME="$xdg_config"
     export UV_CACHE_DIR="$uv_cache"
     export MARGINALIA_NO_MCP=1
+    # HOME is redirected here but never let a sandbox run persist PATH via
+    # uv tool update-shell regardless.
+    export MARGINALIA_NO_UPDATE_SHELL=1
     export MARGINALIA_VAULT="$VAULT"
     [ "$NO_SERVE" -eq 1 ] && export MARGINALIA_NO_SERVE=1
     [ -n "$PROVIDER" ] && export MARGINALIA_LLM_PROVIDER="$PROVIDER"

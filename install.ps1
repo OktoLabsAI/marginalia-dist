@@ -165,6 +165,14 @@ if ($health) {
         Start-Sleep -Seconds 1
     }
     Info "stopped the running daemon - it will restart on the new version below"
+} elseif ((Test-Path (Join-Path $HomeRoot "vaults")) -and
+          (Get-ChildItem -Path (Join-Path $HomeRoot "vaults") -Filter "marginalia.yaml" -Recurse -Depth 2 -ErrorAction SilentlyContinue | Select-Object -First 1)) {
+    # Daemon isn't up (crashed, machine rebooted, whatever) but this machine
+    # was already set up before - a re-run should update in place, not treat
+    # this as a fresh install and re-run vault-create/onboard against existing
+    # state (which dies noninteractively).
+    $upgrade = $true
+    Step "Existing Marginalia install detected (daemon not running) - updating in place"
 }
 
 Step "Installing the marginalia + kg commands (extras: $Extras)"
@@ -184,6 +192,27 @@ if (-not $marginalia) {
     Die "marginalia installed but was not found in $toolBin. Run 'uv tool update-shell', restart PowerShell, re-run."
 }
 Info "marginalia: $marginalia"
+
+# Best-effort: persist PATH into the user's profile so a NEW PowerShell
+# session (next terminal, next re-run) finds marginalia without manual setup.
+# Opt out for sandboxed/test runs that must not touch the real user PATH.
+if ($env:MARGINALIA_NO_UPDATE_SHELL -ne "1") {
+    & uv tool update-shell 2>$null | Out-Null
+    if ($LASTEXITCODE -eq 0) {
+        Info "persisted PATH via 'uv tool update-shell'"
+    } else {
+        Warn "run 'uv tool update-shell' to persist PATH"
+    }
+}
+
+# Upgrade path but health check never told us which vault was active (daemon
+# wasn't running when we checked) - ask the CLI's own notion of "current".
+if ($upgrade -and -not $restartVault) {
+    $current = (& $marginalia vault current 2>$null | Select-Object -First 1)
+    if ($LASTEXITCODE -eq 0 -and $current) {
+        $restartVault = [string]$current
+    }
+}
 
 if ($upgrade) {
     Step "Update mode - leaving your vaults, default, and LLM config untouched"
@@ -238,6 +267,12 @@ if ($upgrade -and $restartVault) {
     $vaultLabel = Split-Path -Leaf $restartVault
 }
 
+# Tracks whether we can honestly report success at the end. Starts true -
+# MARGINALIA_NO_SERVE=1 (never attempted) and upgrade (already known-good) are
+# not failures. Only a failed health wait below flips it. Defined on ALL
+# paths (Set-StrictMode) since the final block reads it unconditionally.
+$serveOk = $true
+$logPath = Join-Path (Join-Path $HomeRoot "logs") "marginalia-serve.log"
 if ($env:MARGINALIA_NO_SERVE -eq "1") {
     Step "Skipping daemon start (MARGINALIA_NO_SERVE=1)"
 } else {
@@ -259,7 +294,13 @@ if ($env:MARGINALIA_NO_SERVE -eq "1") {
     if ($up) {
         Info "health: ok ($RestUrl)"
     } else {
+        $serveOk = $false
         Warn "server did not report healthy within 30s - check 'marginalia serve --foreground --vault $serveVault'"
+        Warn "daemon log: $logPath"
+        if (Test-Path $logPath) {
+            Info "last 20 lines of $logPath:"
+            Get-Content -Path $logPath -Tail 20 | ForEach-Object { Info $_ }
+        }
     }
 }
 
@@ -287,6 +328,14 @@ if ($upgrade) {
 }
 
 Write-Host ""
+if (-not $serveOk) {
+    Write-Host "Marginalia installed, but the daemon did not become healthy." -ForegroundColor Yellow
+    Info "vault    : $serveVault"
+    Info "start manually: marginalia serve --foreground --vault $serveVault"
+    Info "log      : $logPath"
+    exit 1
+}
+
 if ($upgrade) {
     Write-Host "Marginalia updated and restarted." -ForegroundColor Green
 } else {

@@ -101,6 +101,9 @@ if ($resolvedHome -ne $resolvedExpected) {
 
 $env:MARGINALIA_VAULT = $Vault
 $env:MARGINALIA_NO_MCP = "1"
+# This tester redirects HOME/USERPROFILE but not the real Windows user-PATH
+# registry - never let a sandbox run persist PATH there via uv tool update-shell.
+$env:MARGINALIA_NO_UPDATE_SHELL = "1"
 $env:UV_CACHE_DIR = Join-Path $TestHome ".cache\uv"
 $env:XDG_DATA_HOME = Join-Path $TestHome ".local\share"
 $env:XDG_CACHE_HOME = Join-Path $TestHome ".cache"
