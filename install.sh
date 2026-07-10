@@ -28,7 +28,7 @@ set -euo pipefail
 # ── config ────────────────────────────────────────────────────────────────
 # The public distribution copy of this script bakes a release-wheel URL here so
 # `curl … | bash` needs no env. Empty in the source repo (which clones instead).
-DEFAULT_WHEEL_URL="${MARGINALIA_DEFAULT_WHEEL_URL:-https://github.com/OktoLabsAI/marginalia-dist/releases/download/v0.0.37/marginalia-0.0.37-py3-none-any.whl}"
+DEFAULT_WHEEL_URL="${MARGINALIA_DEFAULT_WHEEL_URL:-https://github.com/OktoLabsAI/marginalia-dist/releases/download/v0.0.38/marginalia-0.0.38-py3-none-any.whl}"
 EXTRAS="embeddings,ladybug,mcp,litellm"
 PY_VERSION="3.12"
 REPO="${MARGINALIA_REPO:-git@github.com:OktoLabsAI/marginalia.git}"
@@ -117,6 +117,12 @@ if curl -fs "${REST_URL}/health" >/dev/null 2>&1; then
     sleep 1
   done
   info "stopped the running daemon — it will restart on the new version below"
+elif command -v marginalia >/dev/null 2>&1 || ls "${HOME_ROOT}/vaults"/*/marginalia.yaml >/dev/null 2>&1; then
+  # Daemon isn't up (crashed, machine rebooted, whatever) but this machine was
+  # already set up before — a re-run should update in place, not treat this
+  # as a fresh install and re-run vault-create/onboard against existing state.
+  UPGRADE="1"
+  step "Existing Marginalia install detected (daemon not running) — updating in place"
 fi
 
 # ── 3. install the global tool ────────────────────────────────────────────
@@ -129,9 +135,21 @@ uv tool install --force --python "${PY_VERSION}" "${SPEC}"
 TOOL_BIN="$(uv tool dir --bin 2>/dev/null || true)"
 [ -z "${TOOL_BIN}" ] && TOOL_BIN="${HOME}/.local/bin"
 export PATH="${TOOL_BIN}:${PATH}"
+# Best-effort: persist PATH into the user's shell rc so a NEW shell (next
+# terminal, next `curl | bash` re-run) finds marginalia without manual setup.
+# Opt out for sandboxed/test runs that must not touch real shell rc files.
+if [ "${MARGINALIA_NO_UPDATE_SHELL:-}" != "1" ]; then
+  uv tool update-shell >/dev/null 2>&1 || warn "run 'uv tool update-shell' to persist PATH"
+fi
 command -v marginalia >/dev/null 2>&1 \
   || die "marginalia installed but not found in ${TOOL_BIN}. Run 'uv tool update-shell', restart your shell, re-run."
 info "marginalia: $(command -v marginalia)"
+
+# Upgrade path but health check never told us which vault was active (daemon
+# wasn't running when we checked) — ask the CLI's own notion of "current".
+if [ -n "${UPGRADE}" ] && [ -z "${RESTART_VAULT}" ]; then
+  RESTART_VAULT="$(marginalia vault current 2>/dev/null || true)"
+fi
 
 if [ -n "${UPGRADE}" ]; then
   # Update path: the machine is already set up — don't create vaults, don't
@@ -191,6 +209,11 @@ if [ -n "${UPGRADE}" ] && [ -n "${RESTART_VAULT}" ]; then
 fi
 
 # ── 6. serve ──────────────────────────────────────────────────────────────
+# Tracks whether we can honestly report success at the end. Starts true —
+# MARGINALIA_NO_SERVE=1 (never attempted) and UPGRADE (already known-good) are
+# not failures. Only a failed health wait below flips it.
+SERVE_OK="1"
+DAEMON_LOG="${HOME_ROOT}/logs/marginalia-serve.log"
 if [ "${MARGINALIA_NO_SERVE:-}" = "1" ]; then
   step "Skipping daemon start (MARGINALIA_NO_SERVE=1)"
 else
@@ -215,7 +238,13 @@ else
   if [ -n "${up}" ]; then
     info "health: ${G}ok${X} (${REST_URL})"
   else
+    SERVE_OK=""
     warn "server did not report healthy within 30s — check 'marginalia serve --foreground --vault ${SERVE_VAULT}'"
+    warn "daemon log: ${DAEMON_LOG}"
+    if [ -f "${DAEMON_LOG}" ]; then
+      info "last 20 lines of ${DAEMON_LOG}:"
+      tail -n 20 "${DAEMON_LOG}" || true
+    fi
   fi
 fi
 
@@ -246,6 +275,14 @@ else
 fi
 
 # ── done ──────────────────────────────────────────────────────────────────
+if [ -z "${SERVE_OK}" ]; then
+  printf "\n%sMarginalia installed, but the daemon did not become healthy.%s\n" "$Y" "$X"
+  info "vault    : ${SERVE_VAULT}"
+  info "start manually: marginalia serve --foreground --vault ${SERVE_VAULT}"
+  info "log      : ${DAEMON_LOG}"
+  exit 1
+fi
+
 if [ -n "${UPGRADE}" ]; then
   printf "\n%s🎉 Marginalia updated and restarted.%s\n" "$B$G" "$X"
 else
