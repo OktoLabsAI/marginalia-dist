@@ -186,9 +186,12 @@ if [ -n "${MARGINALIA_LLM_API_BASE:-}" ] && [ -n "${MARGINALIA_LLM_MODEL:-}" ]; 
     ONBOARD+=(--allow-remote-llm --yes)
   fi
   "${ONBOARD[@]}"
-elif [ -e /dev/tty ]; then
+elif (exec < /dev/tty) 2>/dev/null; then
   # Interactive, including `curl … | bash` where stdin is the piped script:
   # drive onboard's provider-first prompts from the real terminal.
+  # NOTE: openability probe, not `[ -e /dev/tty ]` — containers/CI often have a
+  # /dev/tty NODE that fails to open (ENXIO) without a controlling terminal,
+  # which would kill the install under set -e instead of taking the skip path.
   info "choose a provider (or pick Skip — explore() works without an LLM)."
   "${ONBOARD[@]}" < /dev/tty
 else
