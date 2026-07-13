@@ -20,6 +20,40 @@ jobs:
           set -euo pipefail
           bash -n install.sh test-install.sh
           shellcheck install.sh test-install.sh
+          ./test-install.sh --help | grep -F -- '--profile release-lifecycle'
+          EVIDENCE=evidence/v0.0.40/linux-docker-tmux-release-lifecycle.txt
+          EVIDENCE_SHA=aeeedd896594a9e34545976f72d2ab78480c3650bb88c6ca331b06f5ec57b290
+          test "$(sha256sum "$EVIDENCE" | awk '{print $1}')" = "$EVIDENCE_SHA"
+          grep -Fq "$EVIDENCE" README.md
+          grep -Fq "$EVIDENCE_SHA" README.md
+          grep -Fq \
+            'INSTALL_URL=https://raw.githubusercontent.com/OktoLabsAI/marginalia-dist/main/install.sh' \
+            "$EVIDENCE"
+          grep -Fq \
+            'Authenticated Marginalia UI is ready at http://127.0.0.1:7777; browser launch skipped' \
+            "$EVIDENCE"
+          for marker in \
+            RELEASE_LIFECYCLE_FRESH_INSTALL_OK \
+            RELEASE_LIFECYCLE_STATUS_UI_OK \
+            RELEASE_LIFECYCLE_STOPPED_UPDATE_OK \
+            RELEASE_LIFECYCLE_RUNNING_UPDATE_OK \
+            RELEASE_LIFECYCLE_CUSTOM_PORT_REFUSAL_OK \
+            RELEASE_LIFECYCLE_LIVE_PID_REFUSAL_OK \
+            RELEASE_LIFECYCLE_PREVIOUS_TOOL_SENTINEL_OK \
+            RELEASE_LIFECYCLE_ACTIVATION_ROLLBACK_OK \
+            RELEASE_LIFECYCLE_FINAL_STOP_OK \
+            DOCKER_TMUX_RELEASE_LIFECYCLE_OK
+          do
+            grep -Fq "$marker" test-install.sh
+            test "$(grep -Fc "$marker" "$EVIDENCE")" -eq 1
+          done
+          grep -Fq 'marginalia ui --no-open' test-install.sh
+          grep -Fq 'Authenticated Marginalia UI is ready at' test-install.sh
+          grep -Fq '.release-lifecycle-previous-tool-sentinel' test-install.sh
+          grep -Fq "sha256sum \"\$rollback_sentinel\"" test-install.sh
+          grep -Fq \
+            'RELEASE_LIFECYCLE_PREVIOUS_TOOL_SENTINEL_SHA256=478c57d828b23e24c31834f8d49aeafa8822fac5421d4266670216f38d2222b5' \
+            "$EVIDENCE"
 
       - name: Verify manifest, installers, docs, and public wheel
         run: |
@@ -62,6 +96,15 @@ jobs:
           assert f'MARGINALIA_EXPECTED_VERSION:-{version}' in shell_test
           assert f'else {{ "{version}" }}' in powershell_test
           assert url in readme
+          assert (
+              "https://raw.githubusercontent.com/OktoLabsAI/marginalia-dist/"
+              "$DistDriverSha/test-install.ps1"
+          ) in readme
+          assert (
+              '& "$env:SystemRoot\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" `\n'
+              "  -NoProfile -ExecutionPolicy Bypass -File $Driver `\n"
+              "  -Profile release-lifecycle -DriverCommit $DistDriverSha"
+          ) in readme
           assert '"marginalia[' not in readme, "README must never resolve the unrelated PyPI project"
           assert "verified wheel SHA-256" in shell
           assert "restore_previous_tool" in shell
@@ -77,6 +120,72 @@ jobs:
           assert "claude_mcp_registration_matches" in shell
           assert "Test-ClaudeMcpRegistrationMatches" in powershell
           assert "Find-DaemonLockRoot" in powershell
+          windows_lifecycle_markers = (
+              "WINDOWS_RELEASE_LIFECYCLE_INTERACTIVE_ONBOARDING_OK",
+              "RELEASE_LIFECYCLE_FRESH_INSTALL_OK",
+              "RELEASE_LIFECYCLE_STATUS_UI_OK",
+              "RELEASE_LIFECYCLE_STOPPED_UPDATE_OK",
+              "RELEASE_LIFECYCLE_RUNNING_UPDATE_OK",
+              "RELEASE_LIFECYCLE_CUSTOM_PORT_REFUSAL_OK",
+              "RELEASE_LIFECYCLE_LIVE_PID_REFUSAL_OK",
+              "RELEASE_LIFECYCLE_PREVIOUS_TOOL_SENTINEL_SHA256=",
+              "RELEASE_LIFECYCLE_PREVIOUS_TOOL_SENTINEL_OK",
+              "RELEASE_LIFECYCLE_ACTIVATION_ROLLBACK_OK",
+              "RELEASE_LIFECYCLE_FINAL_STOP_OK",
+              "WINDOWS_RELEASE_LIFECYCLE_OK",
+          )
+          for marker in windows_lifecycle_markers:
+              assert powershell_test.count(marker) == 1, marker
+          marker_positions = [powershell_test.index(marker) for marker in windows_lifecycle_markers]
+          assert marker_positions == sorted(marker_positions)
+          powershell_sentinel_create = powershell_test.index(
+              '-Value "previous-tool-only:$Version"'
+          )
+          assert powershell_sentinel_create < powershell_test.index(
+              "RELEASE_LIFECYCLE_CUSTOM_PORT_REFUSAL_OK"
+          )
+          assert powershell_sentinel_create < powershell_test.index(
+              "RELEASE_LIFECYCLE_LIVE_PID_REFUSAL_OK"
+          )
+          assert powershell_test.count('-LiteralPath $rollbackSentinel') >= 4
+          assert '"release-lifecycle"' in powershell_test
+          assert ".release-lifecycle-previous-tool-sentinel" in powershell_test
+          assert "RELEASE_LIFECYCLE_PREVIOUS_TOOL_SENTINEL_SHA256=" in powershell_test
+          assert 'Invoke-ReleaseLifecycle $sandboxCli' in powershell_test
+          assert 'if ($Profile -eq "skip")' in powershell_test
+          assert 'if ($Profile -in @("skip", "release-lifecycle")) {' not in powershell_test
+          assert '$env:UV_NO_MODIFY_PATH = "1"' in powershell_test
+          assert '$env:UV_PYTHON_NO_REGISTRY = "1"' in powershell_test
+          assert '$env:UV_PYTHON_INSTALL_REGISTRY = "0"' in powershell_test
+          assert "UV_UNMANAGED_INSTALL" in powershell_test
+          assert "MARGINALIA_PACKS" in powershell_test
+          assert "MARGINALIA_MANIFEST = $ManifestUrl" in powershell_test
+          assert "Initialize-TestSandbox" in powershell_test
+          assert "Export-PublicEvidence" in powershell_test
+          assert "requires Windows PowerShell 5.1 on Windows" in powershell_test
+          assert "--driver-commit" in shell_test
+          assert "DRIVER_COMMIT=" in shell_test
+          assert "MARGINALIA_MANIFEST=\"$MANIFEST_URL\"" in shell_test
+          assert "curl -fsS --config - http://127.0.0.1:7777/" in shell_test
+          assert '-H "Authorization: Bearer $token"' not in shell_test
+          assert "test_home_is_owned" in shell_test
+          assert "refusing to delete test sandbox with invalid PID record" in shell_test
+          assert "#{pane_dead}" in shell_test
+          assert "tmux pane exited with status" in shell_test
+          assert shell_test.count('wait_for_daemon_stopped "$fresh_pid" 7777 8201') == 2
+          assert 'wait_for_daemon_stopped "$running_after" 7777 8201' in shell_test
+          assert 'wait_for_daemon_stopped "$custom_pid" 7788 8202' in shell_test
+          assert 'wait_for_daemon_stopped "$rollback_after" 7777 8201' in shell_test
+          sentinel_create = shell_test.index(
+              "printf 'previous-tool-only:%s\\n' \"$EXPECTED_VERSION\" > \"$rollback_sentinel\""
+          )
+          custom_refusal = shell_test.index("RELEASE_LIFECYCLE_CUSTOM_PORT_REFUSAL_OK")
+          live_pid_refusal = shell_test.index("RELEASE_LIFECYCLE_LIVE_PID_REFUSAL_OK")
+          rollback_proof = shell_test.index("RELEASE_LIFECYCLE_PREVIOUS_TOOL_SENTINEL_OK")
+          assert sentinel_create < custom_refusal < live_pid_refusal < rollback_proof
+          assert shell_test.count(
+              'sha256sum "$HOME/.marginalia/vaults/$VAULT/marginalia.yaml"'
+          ) >= 5
           assert shell.index('if MCP_GET_OUTPUT="$(claude mcp get') < shell.index(
               "elif claude mcp add"
           )
@@ -365,6 +474,96 @@ jobs:
               $errors | Format-List | Out-Host
               $failed = $true
             }
+          }
+
+          $tester = Get-Content -Raw -LiteralPath "test-install.ps1"
+          $childMatch = [regex]::Match(
+            $tester,
+            '(?s)\$child = @''\r?\n(?<child>.*?)\r?\n''@'
+          )
+          if (-not $childMatch.Success) {
+            throw "test-install.ps1 child runner here-string was not found"
+          }
+          $childTokens = $null
+          $childErrors = $null
+          $childAst = [System.Management.Automation.Language.Parser]::ParseInput(
+            $childMatch.Groups["child"].Value,
+            [ref]$childTokens,
+            [ref]$childErrors
+          )
+          if ($childErrors.Count -gt 0) {
+            $childErrors | Format-List | Out-Host
+            throw "generated Windows child runner did not parse"
+          }
+          $lifecycleAst = $childAst.Find(
+            {
+              param($node)
+              $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+                $node.Name -eq "Invoke-ReleaseLifecycle"
+            },
+            $true
+          )
+          if ($null -eq $lifecycleAst) {
+            throw "generated Windows child runner has no Invoke-ReleaseLifecycle function"
+          }
+          $previousMarkerIndex = -1
+          foreach ($marker in @(
+            "WINDOWS_RELEASE_LIFECYCLE_INTERACTIVE_ONBOARDING_OK",
+            "RELEASE_LIFECYCLE_FRESH_INSTALL_OK",
+            "RELEASE_LIFECYCLE_STATUS_UI_OK",
+            "RELEASE_LIFECYCLE_STOPPED_UPDATE_OK",
+            "RELEASE_LIFECYCLE_RUNNING_UPDATE_OK",
+            "RELEASE_LIFECYCLE_CUSTOM_PORT_REFUSAL_OK",
+            "RELEASE_LIFECYCLE_LIVE_PID_REFUSAL_OK",
+            "RELEASE_LIFECYCLE_PREVIOUS_TOOL_SENTINEL_SHA256=",
+            "RELEASE_LIFECYCLE_PREVIOUS_TOOL_SENTINEL_OK",
+            "RELEASE_LIFECYCLE_ACTIVATION_ROLLBACK_OK",
+            "RELEASE_LIFECYCLE_FINAL_STOP_OK",
+            "WINDOWS_RELEASE_LIFECYCLE_OK"
+          )) {
+            $matches = [regex]::Matches($tester, [regex]::Escape($marker))
+            if ($matches.Count -ne 1) {
+              throw "Windows lifecycle marker is missing or duplicated: $marker"
+            }
+            if ($matches[0].Index -le $previousMarkerIndex) {
+              throw "Windows lifecycle markers are out of order at: $marker"
+            }
+            $previousMarkerIndex = $matches[0].Index
+          }
+          foreach ($required in @(
+            '.release-lifecycle-previous-tool-sentinel',
+            'RELEASE_LIFECYCLE_PREVIOUS_TOOL_SENTINEL_SHA256=',
+            '$Profile -in @("interactive", "release-lifecycle")',
+            'if ($Profile -eq "skip")',
+            '$env:UV_NO_MODIFY_PATH = "1"',
+            '$env:UV_PYTHON_NO_REGISTRY = "1"',
+            '$env:UV_PYTHON_INSTALL_REGISTRY = "0"',
+            '$env:UV_INSTALL_DIR = Join-Path $TestHome ".uv\bin"',
+            '$env:UV_PYTHON_BIN_DIR = Join-Path $TestHome ".uv\python-bin"',
+            '$env:UV_PYTHON_CACHE_DIR = Join-Path $TestHome ".uv\python-cache"',
+            '$env:XDG_BIN_HOME = Join-Path $TestHome ".local\bin"',
+            '$env:MARGINALIA_MANIFEST = $ManifestUrl',
+            '$env:MARGINALIA_PACKS = "core,research,personal"',
+            'Export-PublicEvidence',
+            'Initialize-TestSandbox',
+            'Invoke-ReleaseLifecycle $sandboxCli'
+          )) {
+            if (-not $tester.Contains($required)) {
+              throw "Windows release lifecycle contract is missing: $required"
+            }
+          }
+          $sentinelCreateIndex = $tester.IndexOf('-Value "previous-tool-only:$Version"')
+          $customRefusalIndex = $tester.IndexOf('RELEASE_LIFECYCLE_CUSTOM_PORT_REFUSAL_OK')
+          $livePidRefusalIndex = $tester.IndexOf('RELEASE_LIFECYCLE_LIVE_PID_REFUSAL_OK')
+          $sentinelPathChecks = [regex]::Matches(
+            $tester,
+            [regex]::Escape('-LiteralPath $rollbackSentinel')
+          ).Count
+          if ($sentinelCreateIndex -lt 0 -or
+              $sentinelCreateIndex -ge $customRefusalIndex -or
+              $sentinelCreateIndex -ge $livePidRefusalIndex -or
+              $sentinelPathChecks -lt 4) {
+            throw "Windows same-version refusal sentinel contract is incomplete"
           }
           if ($failed) { throw "PowerShell syntax validation failed" }
 
@@ -747,8 +946,18 @@ jobs:
           foreach ($name in @(
             "UV_TOOL_DIR",
             "UV_TOOL_BIN_DIR",
+            "UV_INSTALL_DIR",
+            "UV_UNMANAGED_INSTALL",
             "UV_PYTHON_INSTALL_DIR",
-            "UV_CACHE_DIR"
+            "UV_PYTHON_BIN_DIR",
+            "UV_PYTHON_CACHE_DIR",
+            "UV_CACHE_DIR",
+            "UV_NO_MODIFY_PATH",
+            "UV_PYTHON_NO_REGISTRY",
+            "UV_PYTHON_INSTALL_REGISTRY",
+            "TEMP",
+            "TMP",
+            "XDG_BIN_HOME"
           )) {
             if ([regex]::Matches($tester, [regex]::Escape($name)).Count -lt 3) {
               throw "$name is not isolated in both parent and child"
@@ -762,7 +971,10 @@ jobs:
             "MARGINALIA_DEFAULT_WHEEL_URL",
             "MARGINALIA_DEFAULT_MANIFEST_URL",
             "MARGINALIA_REPO",
-            "MARGINALIA_REF"
+            "MARGINALIA_REF",
+            "MARGINALIA_PACKS",
+            "MARGINALIA_ENDPOINT",
+            "MARGINALIA_AUTH_TOKEN"
           )) {
             if ([regex]::Matches($tester, [regex]::Escape($name)).Count -lt 2) {
               throw "$name is not scrubbed in both parent and child"
@@ -771,11 +983,107 @@ jobs:
           if (-not $tester.Contains('[Environment]::SetEnvironmentVariable($name, $oldEnv[$name], "Process")')) {
             throw "parent environment restoration is missing"
           }
-          $cleanupIndex = $tester.LastIndexOf('if ($Cleanup)')
-          $stopIndex = $tester.IndexOf('Stop-TestDaemon $TestHome', $cleanupIndex)
-          $removeIndex = $tester.IndexOf('Remove-Item -LiteralPath $TestHome', $cleanupIndex)
+          $childRunIndex = $tester.IndexOf('& $powershell @childArgs')
+          $stopGuardIndex = $tester.IndexOf('if ($Cleanup -or $Profile -eq "release-lifecycle")', $childRunIndex)
+          $stopIndex = $tester.IndexOf('Stop-TestDaemon $TestHome', $stopGuardIndex)
+          $restoreIndex = $tester.IndexOf('foreach ($name in $envNames)', $stopIndex)
+          $exportIndex = $tester.IndexOf('Export-PublicEvidence', $restoreIndex)
+          $removeGuardIndex = $tester.IndexOf('if ($Cleanup)', $exportIndex)
+          $removeIndex = $tester.IndexOf('Remove-TestSandbox $TestHome', $removeGuardIndex)
           $exitIndex = $tester.LastIndexOf('if ($childExitCode -ne 0)')
-          if ($cleanupIndex -lt 0 -or $stopIndex -le $cleanupIndex -or
-              $removeIndex -le $stopIndex -or $exitIndex -le $removeIndex) {
-            throw "sandbox daemon stop, removal, and child-exit propagation are out of order"
+          if ($childRunIndex -lt 0 -or $stopGuardIndex -le $childRunIndex -or
+              $stopIndex -le $stopGuardIndex -or $restoreIndex -le $stopIndex -or
+              $exportIndex -le $restoreIndex -or $removeGuardIndex -le $exportIndex -or
+              $removeIndex -le $removeGuardIndex -or $exitIndex -le $removeIndex) {
+            throw "sandbox stop, environment restoration, evidence export, removal, and exit propagation are out of order"
+          }
+
+          $testerTokens = $null
+          $testerErrors = $null
+          $testerAst = [System.Management.Automation.Language.Parser]::ParseFile(
+            (Join-Path $PWD "test-install.ps1"),
+            [ref]$testerTokens,
+            [ref]$testerErrors
+          )
+          if ($testerErrors.Count -gt 0) { throw "test-install.ps1 did not parse" }
+          foreach ($functionName in @(
+            "Initialize-TestSandbox",
+            "Remove-TestSandbox",
+            "Export-PublicEvidence"
+          )) {
+            $functionAst = $testerAst.Find(
+              {
+                param($node)
+                $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+                  $node.Name -eq $functionName
+              },
+              $true
+            )
+            if ($null -eq $functionAst) { throw "$functionName is missing" }
+            . ([scriptblock]::Create($functionAst.Extent.Text))
+          }
+
+          $unowned = Join-Path $env:RUNNER_TEMP "marginalia-install-test-unowned"
+          New-Item -ItemType Directory -Force -Path $unowned | Out-Null
+          try {
+            $refused = $false
+            try {
+              Initialize-TestSandbox $unowned $env:RUNNER_TEMP | Out-Null
+            } catch {
+              $refused = $_.Exception.Message.Contains("unowned test directory")
+            }
+            if (-not $refused) { throw "unowned Windows test directory was accepted" }
+          } finally {
+            Remove-Item -LiteralPath $unowned -Recurse -Force -ErrorAction SilentlyContinue
+          }
+
+          $owned = Join-Path $env:RUNNER_TEMP "marginalia-install-test-owned"
+          $owned = Initialize-TestSandbox $owned $env:RUNNER_TEMP
+          Set-Content -LiteralPath (Join-Path $owned "retained.txt") -Value "test"
+          Remove-TestSandbox $owned $env:RUNNER_TEMP
+          if (Test-Path -LiteralPath $owned) { throw "owned Windows test sandbox was not removed" }
+
+          $raw = Join-Path $env:RUNNER_TEMP "windows-private.raw.log"
+          $public = Join-Path $env:RUNNER_TEMP "windows-public.log"
+          $privateRoot = "C:\Users\alice\AppData\Local\Temp\marginalia-install-test-proof"
+          @(
+            "**********************",
+            "Windows PowerShell transcript start",
+            "Username: DOMAIN\alice",
+            "Machine: TESTHOST",
+            "**********************",
+            "TEST_HOME=$privateRoot",
+            "CALLER=C:\Users\alice",
+            "IDENTITY=DOMAIN\alice@TESTHOST",
+            "WINDOWS_RELEASE_LIFECYCLE_OK",
+            "**********************",
+            "Windows PowerShell transcript end",
+            "**********************"
+          ) | Set-Content -LiteralPath $raw -Encoding UTF8
+          try {
+            Export-PublicEvidence `
+              $raw $public $privateRoot "C:\Users\alice" "DOMAIN\alice" "TESTHOST"
+            $sanitized = Get-Content -Raw -LiteralPath $public
+            foreach ($required in @(
+              "TEST_HOME=<TEST_HOME>",
+              "CALLER=<CALLER_HOME>",
+              "IDENTITY=<WINDOWS_USER>@<WINDOWS_MACHINE>",
+              "WINDOWS_RELEASE_LIFECYCLE_OK"
+            )) {
+              if (-not $sanitized.Contains($required)) {
+                throw "sanitized evidence is missing: $required"
+              }
+            }
+            foreach ($forbidden in @(
+              "Windows PowerShell transcript",
+              "C:\Users\alice",
+              "DOMAIN\alice",
+              "TESTHOST"
+            )) {
+              if ($sanitized.Contains($forbidden)) {
+                throw "sanitized evidence retained private field: $forbidden"
+              }
+            }
+          } finally {
+            Remove-Item -LiteralPath $raw, $public -Force -ErrorAction SilentlyContinue
           }

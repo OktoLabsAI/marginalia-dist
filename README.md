@@ -126,8 +126,9 @@ To test the full macOS/Linux onboarding flow without touching your real
 ```
 
 The test wrapper uses an isolated `HOME`, disables MCP registration, and deletes
-previous `marginalia-install-test*` sandboxes before it starts. It keeps the new
-sandbox after the run so you can inspect the vault and UI. To run a
+only prior sandboxes carrying its ownership marker. It refuses unowned paths,
+tmux sessions, and Docker containers. It keeps the new sandbox after the run so
+you can inspect the vault and UI. To run a
 noninteractive install-only smoke test and delete the sandbox afterward:
 
 ```bash
@@ -139,7 +140,8 @@ examples keep the new sandbox so the current `capture-pane` evidence remains;
 add `--cleanup` only for throwaway smoke runs.
 
 ```bash
-# Fresh Linux image in Docker, prompts driven through tmux.
+# Local-only lifecycle preflight; final evidence must use the exact-SHA command below.
+./test-install.sh --docker-tmux --profile release-lifecycle
 ./test-install.sh --docker-tmux --profile skip
 ./test-install.sh --docker-tmux --profile auto-lm-studio
 ./test-install.sh --docker-tmux --profile lm-studio
@@ -168,19 +170,85 @@ endpoints. Hosted profiles use a fake exported key and manual model; the tester
 fails if that fake key appears in YAML or tmux evidence. Each tmux run writes
 `capture-pane` evidence under the sandbox directory.
 
-Windows uses a matching PowerShell tester. Run it from a real Windows
-PowerShell terminal, not from macOS/Linux PowerShell or Docker:
+`release-lifecycle` is the canonical Linux release rehearsal. Fetch the tester
+from the exact green dist commit and pass that same SHA back to the tester:
+
+```bash
+DIST_DRIVER_SHA=<exact-green-dist-driver-sha>
+curl -fsSLo /tmp/marginalia-test-install.sh \
+  "https://raw.githubusercontent.com/OktoLabsAI/marginalia-dist/${DIST_DRIVER_SHA}/test-install.sh"
+bash /tmp/marginalia-test-install.sh --docker-tmux \
+  --profile release-lifecycle --driver-commit "$DIST_DRIVER_SHA"
+```
+
+The tester byte-compares itself with the exact public raw driver, pins the
+installer and manifest to that same commit, and records all three URLs and
+SHA-256 values in the pane. In one fresh Ubuntu container and one real tmux TTY
+it verifies
+authenticated status, an authenticated SPA fetch, and `marginalia ui --no-open`,
+exercises stopped and running updates, proves
+custom-port and unverified-live-PID refusal before replacement, injects an
+activation failure, and verifies exact tool/config/daemon rollback. A
+previous-tool-only sentinel with a stable recorded hash proves restoration even
+when the candidate and previous package have the same version. The rehearsal
+then stops cleanly. The retained pane must end with
+`DOCKER_TMUX_RELEASE_LIFECYCLE_OK`; the individual `RELEASE_LIFECYCLE_*_OK`
+markers identify every required phase. This profile is Linux-only and does not
+replace the separate real interactive Windows PowerShell rehearsal.
+
+The current local-uncommitted preflight transcript is staged as
+[`evidence/v0.0.40/linux-docker-tmux-release-lifecycle.txt`](evidence/v0.0.40/linux-docker-tmux-release-lifecycle.txt),
+SHA-256 `aeeedd896594a9e34545976f72d2ab78480c3650bb88c6ca331b06f5ec57b290`
+(35,995 bytes; 1,268 lines). The transcript contains every lifecycle marker
+exactly once, including `RELEASE_LIFECYCLE_PREVIOUS_TOOL_SENTINEL_OK`, and
+records sentinel SHA-256
+`478c57d828b23e24c31834f8d49aeafa8822fac5421d4266670216f38d2222b5`.
+This is preflight evidence, not the final release rehearsal: after the driver
+commit is public and `distribution-gate` is green on its exact SHA, rerun the
+exact command above and replace this
+transcript and hash with the resulting public-driver evidence.
+
+Release evidence is produced after the immutable release asset exists. Commit
+the final tester, workflow, README, and retained transcript together on `main`,
+push that evidence commit, and require every `distribution-gate` job to pass on
+its exact SHA before trusting the rehearsal. This evidence commit must not move
+the dist tag, recreate the prerelease, or replace the wheel asset.
+
+Windows uses a matching PowerShell tester. Run it from an interactive Windows
+PowerShell 5.1 terminal, not PowerShell 7, macOS/Linux PowerShell, or Docker:
 
 ```powershell
-.\test-install.ps1
+$DistDriverSha = "<exact-green-dist-driver-sha>"
+$Driver = Join-Path $env:TEMP "marginalia-test-install.ps1"
+Invoke-WebRequest -UseBasicParsing `
+  "https://raw.githubusercontent.com/OktoLabsAI/marginalia-dist/$DistDriverSha/test-install.ps1" `
+  -OutFile $Driver
+& "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" `
+  -NoProfile -ExecutionPolicy Bypass -File $Driver `
+  -Profile release-lifecycle -DriverCommit $DistDriverSha
 ```
 
 The Windows tester starts a child PowerShell with an isolated `HOME`,
-`USERPROFILE`, `APPDATA`, `LOCALAPPDATA`, `XDG_*`, and `UV_CACHE_DIR`, disables
-Claude MCP registration, runs the public raw `install.ps1` URL, and writes a
-transcript under the sandbox. The transcript must show the public URL and
-`INPUT_REDIRECTED=False`; then drive the provider prompt like a user. For a
-noninteractive smoke check:
+`USERPROFILE`, `APPDATA`, `LOCALAPPDATA`, `TEMP`, `TMP`, `XDG_*`, and every uv
+install/tool/Python/cache path, disables
+Claude MCP registration, prevents uv from modifying the user PATH or Windows
+Python registry, runs the public raw `install.ps1` URL, and writes a transcript
+under its uniquely owned temp sandbox. For release-lifecycle, the driver
+byte-compares itself with the exact public raw commit and pins `install.ps1`
+and `release-manifest.json` to that same SHA. The profile requires
+`INPUT_REDIRECTED=False`: at the live provider prompt, enter `0` to select
+`Skip LLM setup`. The tester verifies that this choice was made interactively,
+then must end with `WINDOWS_RELEASE_LIFECYCLE_OK`. Its phase markers cover
+interactive onboarding, fresh install, authenticated status and SPA/UI access,
+stopped and running updates, custom-port refusal, unverified-live-PID refusal,
+hash-verified restoration of a previous-tool-only sentinel after forced
+activation failure, and final stop. Retain the sandbox; do not add `-Cleanup`
+to the evidence run. Publish only the deterministic `*.public.log` sanitized
+evidence. The `*.private.raw.log` PowerShell transcript can contain Windows
+user/machine metadata and must remain private. The tester stops any sandbox
+daemon even when a lifecycle assertion fails, while retaining both files for
+diagnosis. It refuses unowned test directories and resource-name collisions.
+For a smaller noninteractive smoke check:
 
 ```powershell
 .\test-install.ps1 -Profile skip -Cleanup
@@ -188,8 +256,9 @@ noninteractive smoke check:
 ```
 
 Windows coverage must be driven in a real Windows PowerShell terminal; Docker,
-script parsing, or macOS/Linux PowerShell is not a substitute. The custom
-profile command is a noninteractive YAML smoke check, not prompt coverage.
+script parsing, or macOS/Linux PowerShell is not a substitute. The skip and
+custom profile commands are noninteractive configuration smoke checks, not
+release-lifecycle evidence.
 
 ## After install
 

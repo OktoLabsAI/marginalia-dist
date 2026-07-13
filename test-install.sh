@@ -22,8 +22,18 @@ MODE="direct"
 CLEANUP=0
 NO_SERVE=0
 SESSION="${MARGINALIA_TEST_SESSION:-}"
-CONTAINER="marginalia-install-human"
+CONTAINER="${MARGINALIA_TEST_CONTAINER:-}"
 EVIDENCE=""
+SANDBOX_MARKER_NAME=".marginalia-test-sandbox-owner"
+SANDBOX_MARKER_VALUE="marginalia-test-sandbox-v1"
+RESOURCE_OWNER_KEY="@marginalia_test_owner"
+DOCKER_OWNER_LABEL="com.oktolabs.marginalia.test-owner"
+DRIVER_COMMIT="${MARGINALIA_TEST_DRIVER_COMMIT:-}"
+DRIVER_URL=""
+DRIVER_SHA256=""
+INSTALL_SHA256=""
+MANIFEST_URL=""
+MANIFEST_SHA256=""
 
 usage() {
   cat <<'EOF'
@@ -51,6 +61,7 @@ Profiles for tmux modes:
   --profile existing-inspect  Preseed LLM config and test it without writing.
   --profile existing-reconfigure  Preseed LLM config and reconfigure to LM Studio.
   --profile disable-llm  Preseed LLM config and choose disable.
+  --profile release-lifecycle  Run the complete Linux release lifecycle in Docker+tmux.
   --profile interactive  Do not auto-drive prompts; print tmux attach command.
 
 Options:
@@ -62,6 +73,7 @@ Options:
   --model NAME      Pre-fill MARGINALIA_LLM_MODEL
   --session NAME    tmux session name
   --container NAME  Docker container name for --docker-tmux
+  --driver-commit SHA  Exact dist commit for a public release-lifecycle run
   --no-serve        Install/configure only; do not start the daemon
   --cleanup         Stop daemon/container and delete the test home after the run
   -h, --help        Show this help
@@ -124,6 +136,11 @@ while [ "$#" -gt 0 ]; do
       CONTAINER="$2"
       shift 2
       ;;
+    --driver-commit)
+      [ "$#" -ge 2 ] || die "--driver-commit requires a SHA"
+      DRIVER_COMMIT="$2"
+      shift 2
+      ;;
     --tmux)
       MODE="tmux"
       shift
@@ -151,11 +168,17 @@ while [ "$#" -gt 0 ]; do
 done
 
 case "$PROFILE" in
-  interactive|skip|auto-lm-studio|lm-studio|ollama|litellm|hosted-openai|hosted-openrouter|hosted-gemini|hosted-anthropic|custom|existing-keep|existing-inspect|existing-reconfigure|disable-llm) ;;
+  interactive|skip|auto-lm-studio|lm-studio|ollama|litellm|hosted-openai|hosted-openrouter|hosted-gemini|hosted-anthropic|custom|existing-keep|existing-inspect|existing-reconfigure|disable-llm|release-lifecycle) ;;
   *) die "unknown profile: $PROFILE" ;;
 esac
 if [ "$PROFILE" = "custom" ] && { [ -z "$API_BASE" ] || [ -z "$MODEL" ]; }; then
   die "--profile custom requires --api-base and --model"
+fi
+if [ "$PROFILE" = "release-lifecycle" ] && [ "$MODE" != "docker-tmux" ]; then
+  die "--profile release-lifecycle requires --docker-tmux"
+fi
+if [ "$PROFILE" = "release-lifecycle" ] && [ "$NO_SERVE" -eq 1 ]; then
+  die "--profile release-lifecycle cannot be combined with --no-serve"
 fi
 case "$PROFILE" in
   hosted-openai) [ -z "$MODEL" ] && MODEL="hosted-human-model" ;;
@@ -176,8 +199,13 @@ init_paths() {
     TEST_HOME="${TMPDIR:-/tmp}/marginalia-install-test-${MODE}-${PROFILE}"
   fi
   if [ -z "$SESSION" ]; then
-    SESSION="marginalia-install-${MODE}-${PROFILE}"
+    SESSION="marginalia-install-${MODE}-${PROFILE}-$$"
   fi
+  if [ -z "$CONTAINER" ]; then
+    CONTAINER="marginalia-install-human-$$"
+  fi
+  case "$SESSION" in marginalia-install-*) ;; *) die "tmux session must start with marginalia-install-" ;; esac
+  case "$CONTAINER" in marginalia-install-*) ;; *) die "Docker container must start with marginalia-install-" ;; esac
 }
 
 command -v curl >/dev/null 2>&1 || die "curl is required"
@@ -189,24 +217,110 @@ if [ "$MODE" = "docker-tmux" ]; then
   command -v docker >/dev/null 2>&1 || die "docker is required"
 fi
 
+sha256_file() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$1" | awk '{print $1}'
+  elif command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$1" | awk '{print $1}'
+  else
+    python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1], "rb").read()).hexdigest())' "$1"
+  fi
+}
+
+prepare_release_provenance() {
+  local script_path tmp_driver tmp_install tmp_manifest pinned_install
+  script_path="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
+  DRIVER_SHA256="$(sha256_file "$script_path")"
+  if [ -n "$DRIVER_COMMIT" ]; then
+    case "$DRIVER_COMMIT" in
+      *[!0-9a-f]*|'') die "--driver-commit must be exactly 40 lowercase hexadecimal characters" ;;
+    esac
+    [ "${#DRIVER_COMMIT}" -eq 40 ] \
+      || die "--driver-commit must be exactly 40 lowercase hexadecimal characters"
+    DRIVER_URL="https://raw.githubusercontent.com/OktoLabsAI/marginalia-dist/${DRIVER_COMMIT}/test-install.sh"
+    pinned_install="https://raw.githubusercontent.com/OktoLabsAI/marginalia-dist/${DRIVER_COMMIT}/install.sh"
+    MANIFEST_URL="https://raw.githubusercontent.com/OktoLabsAI/marginalia-dist/${DRIVER_COMMIT}/release-manifest.json"
+    tmp_driver="$(mktemp)"
+    tmp_install="$(mktemp)"
+    tmp_manifest="$(mktemp)"
+    trap 'rm -f "$tmp_driver" "$tmp_install" "$tmp_manifest"' RETURN
+    curl -fsSL "$DRIVER_URL" -o "$tmp_driver"
+    cmp -s "$script_path" "$tmp_driver" \
+      || die "running test-install.sh does not match exact public driver commit $DRIVER_COMMIT"
+    INSTALL_URL="$pinned_install"
+  else
+    DRIVER_COMMIT="LOCAL_UNCOMMITTED"
+    DRIVER_URL="LOCAL_UNCOMMITTED"
+    MANIFEST_URL="https://raw.githubusercontent.com/OktoLabsAI/marginalia-dist/main/release-manifest.json"
+    tmp_install="$(mktemp)"
+    tmp_manifest="$(mktemp)"
+    trap 'rm -f "$tmp_install" "$tmp_manifest"' RETURN
+  fi
+  curl -fsSL "$INSTALL_URL" -o "$tmp_install"
+  curl -fsSL "$MANIFEST_URL" -o "$tmp_manifest"
+  INSTALL_SHA256="$(sha256_file "$tmp_install")"
+  MANIFEST_SHA256="$(sha256_file "$tmp_manifest")"
+  rm -f "${tmp_driver:-}" "$tmp_install" "$tmp_manifest"
+  trap - RETURN
+}
+
 port_open() {
   local port="$1"
   (echo >"/dev/tcp/127.0.0.1/${port}") >/dev/null 2>&1
+}
+
+canonical_tmp_root() {
+  mkdir -p "${TMPDIR:-/tmp}"
+  (cd "${TMPDIR:-/tmp}" && pwd)
+}
+
+test_home_is_owned() {
+  local home="$1" tmp_root parent marker
+  [ -d "$home" ] || return 1
+  tmp_root="$(canonical_tmp_root)"
+  parent="$(cd "$(dirname "$home")" && pwd)"
+  [ "$parent" = "$tmp_root" ] || return 1
+  case "$(basename "$home")" in marginalia-install-test-*) ;; *) return 1 ;; esac
+  marker="$home/$SANDBOX_MARKER_NAME"
+  [ -f "$marker" ] || return 1
+  [ "$(cat "$marker")" = "$SANDBOX_MARKER_VALUE" ]
+}
+
+assert_test_home_location() {
+  local home="$1" tmp_root parent
+  tmp_root="$(canonical_tmp_root)"
+  parent="$(cd "$(dirname "$home")" && pwd)"
+  [ "$parent" = "$tmp_root" ] \
+    || die "test home must be a marginalia-install-test-* directory directly under $tmp_root"
+  case "$(basename "$home")" in
+    marginalia-install-test-*) ;;
+    *) die "test home must be a marginalia-install-test-* directory directly under $tmp_root" ;;
+  esac
+}
+
+remove_owned_tmux_session() {
+  command -v tmux >/dev/null 2>&1 || return 0
+  tmux has-session -t "$SESSION" 2>/dev/null || return 0
+  [ "$(tmux show-options -t "$SESSION" -v "$RESOURCE_OWNER_KEY" 2>/dev/null || true)" = \
+      "$SANDBOX_MARKER_VALUE" ] \
+    || die "refusing to remove unowned tmux session: $SESSION"
+  tmux kill-session -t "$SESSION"
+}
+
+remove_owned_container() {
+  command -v docker >/dev/null 2>&1 || return 0
+  docker inspect "$CONTAINER" >/dev/null 2>&1 || return 0
+  [ "$(docker inspect -f "{{ index .Config.Labels \"$DOCKER_OWNER_LABEL\" }}" "$CONTAINER" 2>/dev/null || true)" = \
+      "$SANDBOX_MARKER_VALUE" ] \
+    || die "refusing to remove unowned Docker container: $CONTAINER"
+  docker rm -f "$CONTAINER" >/dev/null
 }
 
 prepare_home() {
   local parent
   parent="$(mkdir -p "$(dirname "$TEST_HOME")" && cd "$(dirname "$TEST_HOME")" && pwd)"
   TEST_HOME="${parent}/$(basename "$TEST_HOME")"
-  if [ "$TEST_HOME" = "/" ]; then
-    die "refusing to use / as a test home"
-  fi
-  case "$(basename "$TEST_HOME")" in
-    marginalia-install-test*) ;;
-    *)
-      die "refusing to clean non-test-looking home: $TEST_HOME"
-      ;;
-  esac
+  assert_test_home_location "$TEST_HOME"
   if [ -n "$ORIGINAL_HOME" ]; then
     ORIGINAL_HOME="$(cd "$ORIGINAL_HOME" && pwd)"
     case "$TEST_HOME" in
@@ -216,45 +330,90 @@ prepare_home() {
     esac
   fi
   cleanup_previous_test_runs
+  if [ -e "$TEST_HOME" ] && ! test_home_is_owned "$TEST_HOME"; then
+    die "refusing to reuse unowned test directory: $TEST_HOME"
+  fi
   cleanup_test_home_path "$TEST_HOME"
   if command -v tmux >/dev/null 2>&1; then
-    tmux kill-session -t "$SESSION" >/dev/null 2>&1 || true
+    remove_owned_tmux_session
   fi
   if [ "$MODE" = "docker-tmux" ]; then
-    docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
+    remove_owned_container
   fi
-  if curl -fsS http://127.0.0.1:7777/health >/dev/null 2>&1 || port_open 7777; then
-    die "127.0.0.1:7777 is already in use. Stop the real Marginalia daemon first."
-  fi
-  if [ "$NO_SERVE" -ne 1 ] && port_open 8201; then
-    die "127.0.0.1:8201 is already in use. Stop the process using it first."
+  # Docker has its own network namespace. Host port checks protect direct/tmux
+  # runs, but must not require stopping a real host daemon for a container test.
+  if [ "$MODE" != "docker-tmux" ]; then
+    if curl -fsS http://127.0.0.1:7777/health >/dev/null 2>&1 || port_open 7777; then
+      die "127.0.0.1:7777 is already in use. Stop the real Marginalia daemon first."
+    fi
+    if [ "$NO_SERVE" -ne 1 ] && port_open 8201; then
+      die "127.0.0.1:8201 is already in use. Stop the process using it first."
+    fi
   fi
 
   mkdir -p "$TEST_HOME"
+  printf '%s\n' "$SANDBOX_MARKER_VALUE" > "$TEST_HOME/$SANDBOX_MARKER_NAME"
   EVIDENCE="$TEST_HOME/evidence-${SESSION}.txt"
 }
 
 stop_marginalia_in_home() {
-  local home="$1"
+  local home="$1" vault_dir pid_file raw pid parser size
   local tool_bin="$home/.local/bin"
   if [ -x "$tool_bin/marginalia" ]; then
-    HOME="$home" \
-    XDG_DATA_HOME="$home/.local/share" \
-    XDG_CACHE_HOME="$home/.cache" \
-    XDG_CONFIG_HOME="$home/.config" \
-    UV_CACHE_DIR="$home/.cache/uv" \
-    PATH="$tool_bin:$PATH" \
-      "$tool_bin/marginalia" stop --vault "$VAULT" >/dev/null 2>&1 || true
+    for vault_dir in "$home"/.marginalia/vaults/*; do
+      [ -d "$vault_dir" ] || continue
+      HOME="$home" \
+      XDG_DATA_HOME="$home/.local/share" \
+      XDG_CACHE_HOME="$home/.cache" \
+      XDG_CONFIG_HOME="$home/.config" \
+      UV_CACHE_DIR="$home/.cache/uv" \
+      PATH="$tool_bin:$PATH" \
+        "$tool_bin/marginalia" stop --vault "$vault_dir" >/dev/null 2>&1 || true
+    done
   fi
+  while IFS= read -r pid_file; do
+    [ -r "$pid_file" ] \
+      || die "refusing to delete test sandbox with unreadable PID record: $pid_file"
+    size="$(wc -c < "$pid_file" | tr -d '[:space:]')"
+    case "$size" in *[!0-9]*|'') die "could not size test sandbox PID record: $pid_file" ;; esac
+    [ "$size" -gt 0 ] \
+      || die "refusing to delete test sandbox with empty PID record: $pid_file"
+    [ "$size" -le 16384 ] \
+      || die "refusing to delete test sandbox with oversized PID record: $pid_file"
+    raw="$(cat "$pid_file")"
+    case "$raw" in
+      *[!0-9]*|'')
+        if command -v python3 >/dev/null 2>&1; then
+          parser="$(command -v python3)"
+        elif [ -x "$home/.local/share/uv/tools/marginalia/bin/python" ]; then
+          parser="$home/.local/share/uv/tools/marginalia/bin/python"
+        else
+          die "refusing to delete test sandbox with unverifiable PID record: $pid_file"
+        fi
+        pid="$("$parser" -c '
+import json, sys
+with open(sys.argv[1], encoding="utf-8") as handle:
+    payload = json.load(handle)
+pid = payload.get("pid") if isinstance(payload, dict) else None
+if type(pid) is not int or pid <= 0:
+    raise SystemExit(1)
+print(pid)
+' "$pid_file" 2>/dev/null)" \
+          || die "refusing to delete test sandbox with invalid PID record: $pid_file"
+        ;;
+      *) pid="$raw" ;;
+    esac
+    if [ -n "$pid" ] && kill -0 "$pid" >/dev/null 2>&1; then
+      die "refusing to delete test sandbox with live daemon pid $pid: $home"
+    fi
+  done < <(find "$home/.marginalia" -type f -name server.pid -print 2>/dev/null || true)
 }
 
 cleanup_test_home_path() {
   local home="$1"
   [ -e "$home" ] || return 0
-  case "$(basename "$home")" in
-    marginalia-install-test*) ;;
-    *) die "refusing to delete non-test-looking home: $home" ;;
-  esac
+  assert_test_home_location "$home"
+  test_home_is_owned "$home" || die "refusing to delete unowned test directory: $home"
   if [ -n "$ORIGINAL_HOME" ]; then
     case "$home" in
       "$ORIGINAL_HOME"|"$ORIGINAL_HOME/.marginalia"|"$ORIGINAL_HOME/.marginalia"/*)
@@ -273,12 +432,19 @@ cleanup_previous_test_runs() {
     [ -e "$candidate" ] || continue
     parent="$(cd "$(dirname "$candidate")" && pwd)"
     home="${parent}/$(basename "$candidate")"
-    cleanup_test_home_path "$home"
+    if test_home_is_owned "$home"; then
+      cleanup_test_home_path "$home"
+    fi
   done
   if command -v tmux >/dev/null 2>&1; then
     while IFS= read -r session_name; do
       case "$session_name" in
-        marginalia-install-*) tmux kill-session -t "$session_name" >/dev/null 2>&1 || true ;;
+        marginalia-install-*)
+          if [ "$(tmux show-options -t "$session_name" -v "$RESOURCE_OWNER_KEY" 2>/dev/null || true)" = \
+              "$SANDBOX_MARKER_VALUE" ]; then
+            tmux kill-session -t "$session_name" >/dev/null 2>&1 || true
+          fi
+          ;;
       esac
     done < <(tmux list-sessions -F '#S' 2>/dev/null || true)
   fi
@@ -286,10 +452,10 @@ cleanup_previous_test_runs() {
 
 cleanup_sandbox() {
   if [ "$MODE" = "docker-tmux" ]; then
-    docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
+    remove_owned_container
   fi
   if command -v tmux >/dev/null 2>&1; then
-    tmux kill-session -t "$SESSION" >/dev/null 2>&1 || true
+    remove_owned_tmux_session
   fi
   cleanup_test_home_path "$TEST_HOME"
 }
@@ -471,7 +637,9 @@ export PATH="$HOME/.local/bin:$PATH"
 marginalia --help | sed -n '1,12p'
 CLI_VERSION="$(marginalia --version)"
 [ "$CLI_VERSION" = "marginalia $EXPECTED_VERSION" ]
-marginalia vault current
+CURRENT_VAULT="$(marginalia vault current)"
+[ "$(cd "$CURRENT_VAULT" && pwd)" = "$(cd "$HOME/.marginalia/vaults/$VAULT" && pwd)" ]
+printf '%s\n' "$CURRENT_VAULT"
 if [ "$NO_SERVE" != "1" ]; then
   curl -fsS http://127.0.0.1:7777/health
   printf '\n'
@@ -697,12 +865,216 @@ llm:
 YAML
 }
 
+json_field() {
+  local payload="$1" field="$2"
+  printf '%s' "$payload" | python3 -c \
+    'import json,sys; print(json.load(sys.stdin).get(sys.argv[1], ""))' "$field"
+}
+
+wait_for_health() {
+  local endpoint="$1"
+  for _ in $(seq 1 90); do
+    curl -fsS "${endpoint}/health" >/dev/null 2>&1 && return 0
+    sleep 1
+  done
+  echo "daemon did not become healthy at ${endpoint}" >&2
+  return 1
+}
+
+runner_port_open() {
+  local port="$1"
+  (echo >"/dev/tcp/127.0.0.1/${port}") >/dev/null 2>&1
+}
+
+wait_for_daemon_stopped() {
+  local pid="$1" port port_open_now
+  shift
+  for _ in $(seq 1 60); do
+    port_open_now=0
+    for port in "$@"; do
+      if runner_port_open "$port"; then
+        port_open_now=1
+        break
+      fi
+    done
+    if ! kill -0 "$pid" >/dev/null 2>&1 && [ "$port_open_now" -eq 0 ]; then
+      return 0
+    fi
+    sleep 0.5
+  done
+  echo "daemon process or ports remained live after stop (pid $pid; ports $*)" >&2
+  return 1
+}
+
+verify_default_daemon() {
+  local status token html ui_output
+  wait_for_health "http://127.0.0.1:7777"
+  status="$(marginalia status --vault "$VAULT" --json --timeout 5)"
+  [ "$(json_field "$status" marginalia_version)" = "$EXPECTED_VERSION" ]
+  [ "$(json_field "$status" endpoint)" = "http://127.0.0.1:7777" ]
+  token="$(head -n 1 "$HOME/.marginalia/vaults/$VAULT/.marginalia/daemon.token")"
+  [ -n "$token" ]
+  html="$(printf 'header = "Authorization: Bearer %s"\n' "$token" \
+    | curl -fsS --config - http://127.0.0.1:7777/)"
+  printf '%s' "$html" | grep -Eiq '<!doctype html|<html'
+  ui_output="$(marginalia ui --no-open --vault "$VAULT")"
+  [ "$ui_output" = \
+    "Authenticated Marginalia UI is ready at http://127.0.0.1:7777; browser launch skipped" ]
+  printf '%s\n' "$ui_output" >&2
+  printf '%s' "$status"
+}
+
+run_raw_installer() {
+  curl -fsSL "$INSTALL_URL" | bash
+}
+
+run_release_lifecycle() {
+  local status fresh_pid stopped_output running_before running_after custom_status custom_pid
+  local custom_output guard_vault guard_pid guard_output rollback_before rollback_after
+  local rollback_output config_sha tool_root real_uv rollback_sentinel
+  local rollback_sentinel_sha token_file initial_token
+
+  status="$(verify_default_daemon)"
+  fresh_pid="$(json_field "$status" pid)"
+  [ -n "$fresh_pid" ]
+  token_file="$HOME/.marginalia/vaults/$VAULT/.marginalia/daemon.token"
+  initial_token="$(cat "$token_file")"
+  [ -n "$initial_token" ]
+  echo RELEASE_LIFECYCLE_FRESH_INSTALL_OK
+  echo RELEASE_LIFECYCLE_STATUS_UI_OK
+
+  config_sha="$(sha256sum "$HOME/.marginalia/vaults/$VAULT/marginalia.yaml" | awk '{print $1}')"
+  marginalia stop --vault "$VAULT"
+  wait_for_daemon_stopped "$fresh_pid" 7777 8201 || return 81
+  stopped_output="$HOME/stopped-update.out"
+  run_raw_installer >"$stopped_output" 2>&1
+  cat "$stopped_output"
+  grep -Fq 'daemon remains stopped' "$stopped_output"
+  wait_for_daemon_stopped "$fresh_pid" 7777 8201 || return 82
+  [ "$(sha256sum "$HOME/.marginalia/vaults/$VAULT/marginalia.yaml" | awk '{print $1}')" = "$config_sha" ]
+  [ "$(cat "$token_file")" = "$initial_token" ]
+  echo RELEASE_LIFECYCLE_STOPPED_UPDATE_OK
+
+  marginalia serve --daemon --vault "$VAULT"
+  status="$(verify_default_daemon)"
+  running_before="$(json_field "$status" pid)"
+  run_raw_installer
+  status="$(verify_default_daemon)"
+  running_after="$(json_field "$status" pid)"
+  [ -n "$running_before" ] && [ -n "$running_after" ]
+  [ "$running_before" != "$running_after" ]
+  [ "$(sha256sum "$HOME/.marginalia/vaults/$VAULT/marginalia.yaml" | awk '{print $1}')" = "$config_sha" ]
+  [ "$(cat "$token_file")" = "$initial_token" ]
+  tool_root="$(uv tool dir)"
+  rollback_sentinel="${tool_root}/marginalia/.release-lifecycle-previous-tool-sentinel"
+  [ ! -e "$rollback_sentinel" ]
+  printf 'previous-tool-only:%s\n' "$EXPECTED_VERSION" > "$rollback_sentinel"
+  rollback_sentinel_sha="$(sha256sum "$rollback_sentinel" | awk '{print $1}')"
+  echo RELEASE_LIFECYCLE_RUNNING_UPDATE_OK
+
+  marginalia stop --vault "$VAULT"
+  wait_for_daemon_stopped "$running_after" 7777 8201
+  marginalia serve --daemon --vault "$VAULT" --port 7788 --mcp-port 8202
+  wait_for_health "http://127.0.0.1:7788"
+  custom_status="$(MARGINALIA_ENDPOINT=http://127.0.0.1:7788 \
+    marginalia status --vault "$VAULT" --json --timeout 5)"
+  custom_pid="$(json_field "$custom_status" pid)"
+  [ -n "$custom_pid" ]
+  custom_output="$HOME/custom-port-refusal.out"
+  export MARGINALIA_ENDPOINT=http://127.0.0.1:7788
+  if run_raw_installer >"$custom_output" 2>&1; then
+    echo "installer accepted a running custom-port daemon" >&2
+    return 83
+  fi
+  unset MARGINALIA_ENDPOINT
+  cat "$custom_output"
+  grep -Fq 'uses custom endpoint http://127.0.0.1:7788' "$custom_output"
+  kill -0 "$custom_pid"
+  [ "$(marginalia --version)" = "marginalia $EXPECTED_VERSION" ]
+  [ "$(sha256sum "$HOME/.marginalia/vaults/$VAULT/marginalia.yaml" | awk '{print $1}')" = "$config_sha" ]
+  [ "$(cat "$token_file")" = "$initial_token" ]
+  [ -f "$rollback_sentinel" ]
+  [ "$(sha256sum "$rollback_sentinel" | awk '{print $1}')" = "$rollback_sentinel_sha" ]
+  MARGINALIA_ENDPOINT=http://127.0.0.1:7788 marginalia stop --vault "$VAULT"
+  wait_for_daemon_stopped "$custom_pid" 7788 8202
+  echo RELEASE_LIFECYCLE_CUSTOM_PORT_REFUSAL_OK
+
+  guard_vault="$HOME/.marginalia/vaults/release-pid-guard"
+  mkdir -p "$guard_vault/.marginalia"
+  sleep 300 &
+  guard_pid="$!"
+  printf '%s\n' "$guard_pid" > "$guard_vault/.marginalia/server.pid"
+  guard_output="$HOME/live-pid-refusal.out"
+  if run_raw_installer >"$guard_output" 2>&1; then
+    echo "installer accepted an unverified live PID record" >&2
+    return 84
+  fi
+  cat "$guard_output"
+  grep -Fq "live Marginalia daemon (pid $guard_pid)" "$guard_output"
+  grep -Fq "marginalia stop --vault $guard_vault" "$guard_output"
+  kill -0 "$guard_pid"
+  kill "$guard_pid"
+  wait "$guard_pid" 2>/dev/null || true
+  rm -rf "$guard_vault"
+  [ "$(marginalia --version)" = "marginalia $EXPECTED_VERSION" ]
+  [ "$(sha256sum "$HOME/.marginalia/vaults/$VAULT/marginalia.yaml" | awk '{print $1}')" = "$config_sha" ]
+  [ "$(cat "$token_file")" = "$initial_token" ]
+  [ -f "$rollback_sentinel" ]
+  [ "$(sha256sum "$rollback_sentinel" | awk '{print $1}')" = "$rollback_sentinel_sha" ]
+  echo RELEASE_LIFECYCLE_LIVE_PID_REFUSAL_OK
+
+  marginalia serve --daemon --vault "$VAULT"
+  status="$(verify_default_daemon)"
+  rollback_before="$(json_field "$status" pid)"
+  rollback_output="$HOME/activation-rollback.out"
+  real_uv="$(command -v uv)"
+  uv() {
+    if [ "${MARGINALIA_FAIL_ACTIVATION:-}" = "1" ] \
+       && [ "${1:-}" = "tool" ] && [ "${2:-}" = "install" ]; then
+      return 77
+    fi
+    "$REAL_UV" "$@"
+  }
+  export -f uv
+  export REAL_UV="$real_uv"
+  export MARGINALIA_FAIL_ACTIVATION=1
+  if run_raw_installer >"$rollback_output" 2>&1; then
+    echo "forced activation failure unexpectedly succeeded" >&2
+    return 85
+  fi
+  unset MARGINALIA_FAIL_ACTIVATION
+  unset -f uv
+  cat "$rollback_output"
+  grep -Fq 'candidate activation failed' "$rollback_output"
+  grep -Fq "restored and restarted Marginalia $EXPECTED_VERSION" "$rollback_output"
+  status="$(verify_default_daemon)"
+  rollback_after="$(json_field "$status" pid)"
+  [ -n "$rollback_before" ] && [ -n "$rollback_after" ]
+  [ "$rollback_before" != "$rollback_after" ]
+  [ "$(marginalia --version)" = "marginalia $EXPECTED_VERSION" ]
+  [ "$(sha256sum "$HOME/.marginalia/vaults/$VAULT/marginalia.yaml" | awk '{print $1}')" = "$config_sha" ]
+  [ "$(cat "$token_file")" = "$initial_token" ]
+  [ -f "$rollback_sentinel" ]
+  [ "$(sha256sum "$rollback_sentinel" | awk '{print $1}')" = "$rollback_sentinel_sha" ]
+  [ -z "$(find "$tool_root" -maxdepth 1 -name '.marginalia-installer-backup-*' -print -quit)" ]
+  printf 'RELEASE_LIFECYCLE_PREVIOUS_TOOL_SENTINEL_SHA256=%s\n' "$rollback_sentinel_sha"
+  echo RELEASE_LIFECYCLE_PREVIOUS_TOOL_SENTINEL_OK
+  echo RELEASE_LIFECYCLE_ACTIVATION_ROLLBACK_OK
+
+  marginalia stop --vault "$VAULT"
+  wait_for_daemon_stopped "$rollback_after" 7777 8201 || return 86
+  [ "$(cat "$token_file")" = "$initial_token" ]
+  echo RELEASE_LIFECYCLE_FINAL_STOP_OK
+  echo DOCKER_TMUX_RELEASE_LIFECYCLE_OK
+}
+
 export MARGINALIA_NO_MCP=1
 # Ephemeral container, but stay consistent - never persist PATH via
 # uv tool update-shell in a sandbox run.
 export MARGINALIA_NO_UPDATE_SHELL=1
 export MARGINALIA_VAULT="$VAULT"
 export MARGINALIA_EXPECTED_VERSION="$EXPECTED_VERSION"
+[ "$PROFILE" = "release-lifecycle" ] && export MARGINALIA_MANIFEST="$MANIFEST_URL"
 [ "$NO_SERVE" = "1" ] && export MARGINALIA_NO_SERVE=1
 
 case "$PROFILE" in
@@ -723,7 +1095,13 @@ elif [ "$PROFILE" = "hosted-openai" ] || [ "$PROFILE" = "hosted-openrouter" ] ||
   export MARGINALIA_HOSTED_TEST_KEY=sk-fake-public-installer-test
 fi
 
-printf 'INSTALL_URL=%s\nPROFILE=%s\n' "$INSTALL_URL" "$PROFILE"
+if [ "$PROFILE" = "release-lifecycle" ]; then
+  printf 'DRIVER_COMMIT=%s\nDRIVER_URL=%s\nDRIVER_SHA256=%s\n' \
+    "$DRIVER_COMMIT" "$DRIVER_URL" "$DRIVER_SHA256"
+  printf 'INSTALL_URL=%s\nINSTALL_SHA256=%s\nMANIFEST_URL=%s\nMANIFEST_SHA256=%s\n' \
+    "$INSTALL_URL" "$INSTALL_SHA256" "$MANIFEST_URL" "$MANIFEST_SHA256"
+fi
+printf 'PROFILE=%s\n' "$PROFILE"
 curl -fsSL "$INSTALL_URL" | bash
 
 export PATH="$HOME/.local/bin:$PATH"
@@ -741,7 +1119,7 @@ if [ "$NO_SERVE" != "1" ]; then
 fi
 YAML="$HOME/.marginalia/vaults/$VAULT/marginalia.yaml"
 case "$PROFILE" in
-  skip)
+  skip|release-lifecycle)
     ! grep -q '^llm:' "$YAML"
     ;;
   lm-studio)
@@ -807,8 +1185,12 @@ case "$PROFILE" in
     grep -q 'enabled: false' "$YAML"
     ;;
 esac
-marginalia stop --vault "$VAULT" >/dev/null 2>&1 || true
-echo DOCKER_TMUX_HUMAN_INSTALL_OK
+if [ "$PROFILE" = "release-lifecycle" ]; then
+  run_release_lifecycle
+else
+  marginalia stop --vault "$VAULT" >/dev/null 2>&1 || true
+  echo DOCKER_TMUX_HUMAN_INSTALL_OK
+fi
 RUNNER
   chmod +x "$runner"
   printf '%s\n' "$runner"
@@ -819,12 +1201,20 @@ capture() {
 }
 
 wait_for_text() {
-  local needle="$1" timeout="$2" start now
+  local needle="$1" timeout="$2" start now pane_dead pane_status
   start="$(date +%s)"
   while true; do
     capture
     if grep -Fq "$needle" "$EVIDENCE"; then
       return 0
+    fi
+    pane_dead="$(tmux display-message -p -t "$SESSION" '#{pane_dead}' 2>/dev/null || true)"
+    if [ "$pane_dead" = "1" ]; then
+      pane_status="$(tmux display-message -p -t "$SESSION" \
+        '#{pane_dead_status}' 2>/dev/null || true)"
+      printf 'tmux pane exited with status %s before %s; evidence: %s\n' \
+        "${pane_status:-unknown}" "$needle" "$EVIDENCE" >&2
+      return 1
     fi
     now="$(date +%s)"
     if [ $((now - start)) -ge "$timeout" ]; then
@@ -841,7 +1231,7 @@ drive_profile() {
       printf 'tmux session started. Attach and drive prompts:\n  tmux attach -t %s\n' "$SESSION"
       return
       ;;
-    skip)
+    skip|release-lifecycle)
       wait_for_text "Provider" 900
       tmux send-keys -t "$SESSION" "0" C-m
       ;;
@@ -1015,10 +1405,11 @@ run_direct() {
 run_host_tmux() {
   local runner
   runner="$(write_host_runner)"
-  tmux kill-session -t "$SESSION" >/dev/null 2>&1 || true
+  remove_owned_tmux_session
   tmux new-session -d -s "$SESSION" -x 200 -y 90 \
     "INSTALL_URL='$INSTALL_URL' TEST_HOME='$TEST_HOME' VAULT='$VAULT' PROFILE='$PROFILE' NO_SERVE='$NO_SERVE' MODEL='$MODEL' EXPECTED_VERSION='$EXPECTED_VERSION' bash '$runner'"
   tmux set-option -t "$SESSION" remain-on-exit on
+  tmux set-option -t "$SESSION" "$RESOURCE_OWNER_KEY" "$SANDBOX_MARKER_VALUE"
   drive_profile
   if [ "$PROFILE" != "interactive" ]; then
     wait_for_text "MAC_TMUX_HUMAN_INSTALL_OK" 1800
@@ -1039,14 +1430,19 @@ run_host_tmux() {
 run_docker_tmux() {
   local runner
   runner="$(write_docker_runner)"
-  tmux kill-session -t "$SESSION" >/dev/null 2>&1 || true
-  docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
+  remove_owned_tmux_session
+  remove_owned_container
   tmux new-session -d -s "$SESSION" -x 200 -y 90 \
-    "docker run --rm -it --name '$CONTAINER' -e INSTALL_URL='$INSTALL_URL' -e VAULT='$VAULT' -e PROFILE='$PROFILE' -e NO_SERVE='$NO_SERVE' -e MODEL='$MODEL' -e EXPECTED_VERSION='$EXPECTED_VERSION' -v '$runner:/runner.sh:ro' ubuntu:24.04 bash /runner.sh"
+    "docker run --rm -it --name '$CONTAINER' --label '$DOCKER_OWNER_LABEL=$SANDBOX_MARKER_VALUE' -e INSTALL_URL='$INSTALL_URL' -e VAULT='$VAULT' -e PROFILE='$PROFILE' -e NO_SERVE='$NO_SERVE' -e MODEL='$MODEL' -e EXPECTED_VERSION='$EXPECTED_VERSION' -e DRIVER_COMMIT='$DRIVER_COMMIT' -e DRIVER_URL='$DRIVER_URL' -e DRIVER_SHA256='$DRIVER_SHA256' -e INSTALL_SHA256='$INSTALL_SHA256' -e MANIFEST_URL='$MANIFEST_URL' -e MANIFEST_SHA256='$MANIFEST_SHA256' -v '$runner:/runner.sh:ro' ubuntu:24.04 bash /runner.sh"
   tmux set-option -t "$SESSION" remain-on-exit on
+  tmux set-option -t "$SESSION" "$RESOURCE_OWNER_KEY" "$SANDBOX_MARKER_VALUE"
   drive_profile
   if [ "$PROFILE" != "interactive" ]; then
-    wait_for_text "DOCKER_TMUX_HUMAN_INSTALL_OK" 2400
+    if [ "$PROFILE" = "release-lifecycle" ]; then
+      wait_for_text "DOCKER_TMUX_RELEASE_LIFECYCLE_OK" 3600
+    else
+      wait_for_text "DOCKER_TMUX_HUMAN_INSTALL_OK" 2400
+    fi
     capture
     if profile_uses_fake_secret; then
       if grep -q 'sk-fake-public-installer-test' "$EVIDENCE"; then
@@ -1062,6 +1458,9 @@ run_docker_tmux() {
 }
 
 init_paths
+if [ "$PROFILE" = "release-lifecycle" ]; then
+  prepare_release_provenance
+fi
 prepare_home
 if [ "$CLEANUP" -eq 1 ]; then
   trap cleanup_sandbox EXIT
