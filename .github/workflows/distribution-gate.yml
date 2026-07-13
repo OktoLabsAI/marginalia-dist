@@ -408,7 +408,7 @@ jobs:
           }
           $decoratedConnectedUser = @(
             "Scope: User config (available in all your projects)",
-            "Status: ✓ Connected",
+            ("Status: {0} Connected" -f [char]0x2713),
             "Type: http",
             "URL: $expectedUrl"
           ) -join "`n"
