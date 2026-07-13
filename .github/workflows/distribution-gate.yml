@@ -22,13 +22,28 @@ jobs:
           shellcheck install.sh test-install.sh
           ./test-install.sh --help | grep -F -- '--profile release-lifecycle'
           EVIDENCE=evidence/v0.0.40/linux-docker-tmux-release-lifecycle.txt
-          EVIDENCE_SHA=aeeedd896594a9e34545976f72d2ab78480c3650bb88c6ca331b06f5ec57b290
+          EVIDENCE_SHA=6b72dc5c4c2dbefd03772492234b9cf3f73e092644ef29469aa8ae431792101f
+          DRIVER_COMMIT=3764845c7f92cae13e6f2b3b289665a06696d921
+          DRIVER_SHA=29cbedd70451d6e3a007c626a39f3827828617c3a09beb6e408ba060efe9ddfa
+          INSTALL_SHA=55127f6a3ef35e7b0ae9bc0aeb506dc3c51b6695d9dfb759f73dd018b8870866
+          MANIFEST_SHA=619d45919b506757442b758a4898e865e5600c7da12d8c83677bb3080414c5d8
           test "$(sha256sum "$EVIDENCE" | awk '{print $1}')" = "$EVIDENCE_SHA"
           grep -Fq "$EVIDENCE" README.md
           grep -Fq "$EVIDENCE_SHA" README.md
-          grep -Fq \
-            'INSTALL_URL=https://raw.githubusercontent.com/OktoLabsAI/marginalia-dist/main/install.sh' \
+          grep -Fxq "DRIVER_COMMIT=$DRIVER_COMMIT" "$EVIDENCE"
+          grep -Fxq \
+            "DRIVER_URL=https://raw.githubusercontent.com/OktoLabsAI/marginalia-dist/$DRIVER_COMMIT/test-install.sh" \
             "$EVIDENCE"
+          grep -Fxq "DRIVER_SHA256=$DRIVER_SHA" "$EVIDENCE"
+          grep -Fxq \
+            "INSTALL_URL=https://raw.githubusercontent.com/OktoLabsAI/marginalia-dist/$DRIVER_COMMIT/install.sh" \
+            "$EVIDENCE"
+          grep -Fxq "INSTALL_SHA256=$INSTALL_SHA" "$EVIDENCE"
+          grep -Fxq \
+            "MANIFEST_URL=https://raw.githubusercontent.com/OktoLabsAI/marginalia-dist/$DRIVER_COMMIT/release-manifest.json" \
+            "$EVIDENCE"
+          grep -Fxq "MANIFEST_SHA256=$MANIFEST_SHA" "$EVIDENCE"
+          grep -Fq 'Pane is dead (status 0,' "$EVIDENCE"
           grep -Fq \
             'Authenticated Marginalia UI is ready at http://127.0.0.1:7777; browser launch skipped' \
             "$EVIDENCE"

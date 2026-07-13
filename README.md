@@ -191,28 +191,28 @@ custom-port and unverified-live-PID refusal before replacement, injects an
 activation failure, and verifies exact tool/config/daemon rollback. A
 previous-tool-only sentinel with a stable recorded hash proves restoration even
 when the candidate and previous package have the same version. The rehearsal
-then stops cleanly. The retained pane must end with
-`DOCKER_TMUX_RELEASE_LIFECYCLE_OK`; the individual `RELEASE_LIFECYCLE_*_OK`
-markers identify every required phase. This profile is Linux-only and does not
-replace the separate real interactive Windows PowerShell rehearsal.
+then stops cleanly. The retained pane must contain
+`DOCKER_TMUX_RELEASE_LIFECYCLE_OK` exactly once and record pane exit status 0;
+the individual `RELEASE_LIFECYCLE_*_OK` markers identify every required phase.
+This profile is Linux-only and does not replace the separate real interactive
+Windows PowerShell rehearsal.
 
-The current local-uncommitted preflight transcript is staged as
+The final Linux rehearsal fetched the driver from exact public dist commit
+`3764845c7f92cae13e6f2b3b289665a06696d921`, after all three jobs in
+[`distribution-gate` run 29265687564](https://github.com/OktoLabsAI/marginalia-dist/actions/runs/29265687564)
+passed on that SHA. Its retained transcript is
 [`evidence/v0.0.40/linux-docker-tmux-release-lifecycle.txt`](evidence/v0.0.40/linux-docker-tmux-release-lifecycle.txt),
-SHA-256 `aeeedd896594a9e34545976f72d2ab78480c3650bb88c6ca331b06f5ec57b290`
-(35,995 bytes; 1,268 lines). The transcript contains every lifecycle marker
-exactly once, including `RELEASE_LIFECYCLE_PREVIOUS_TOOL_SENTINEL_OK`, and
-records sentinel SHA-256
+SHA-256 `6b72dc5c4c2dbefd03772492234b9cf3f73e092644ef29469aa8ae431792101f`
+(36,241 bytes; 1,270 lines). It records the exact driver, installer, and manifest
+URLs plus their SHA-256 values; contains every lifecycle marker exactly once,
+including `RELEASE_LIFECYCLE_PREVIOUS_TOOL_SENTINEL_OK`; records sentinel SHA-256
 `478c57d828b23e24c31834f8d49aeafa8822fac5421d4266670216f38d2222b5`.
-This is preflight evidence, not the final release rehearsal: after the driver
-commit is public and `distribution-gate` is green on its exact SHA, rerun the
-exact command above and replace this
-transcript and hash with the resulting public-driver evidence.
+The final line records tmux pane status 0.
 
-Release evidence is produced after the immutable release asset exists. Commit
-the final tester, workflow, README, and retained transcript together on `main`,
-push that evidence commit, and require every `distribution-gate` job to pass on
-its exact SHA before trusting the rehearsal. This evidence commit must not move
-the dist tag, recreate the prerelease, or replace the wheel asset.
+The evidence, workflow, and this record must be committed together on `main`,
+and every `distribution-gate` job must pass on that exact evidence commit before
+the rehearsal is trusted. The evidence commit does not move the dist tag,
+recreate the prerelease, or replace the wheel asset.
 
 Windows uses a matching PowerShell tester. Run it from an interactive Windows
 PowerShell 5.1 terminal, not PowerShell 7, macOS/Linux PowerShell, or Docker:
