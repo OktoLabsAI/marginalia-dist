@@ -13,6 +13,7 @@ INSTALL_URL="${MARGINALIA_INSTALL_URL:-$DEFAULT_URL}"
 TEST_HOME="${MARGINALIA_TEST_HOME:-}"
 ORIGINAL_HOME="${HOME:-}"
 VAULT="${MARGINALIA_VAULT:-mynotes}"
+EXPECTED_VERSION="${MARGINALIA_EXPECTED_VERSION:-0.0.40}"
 PROVIDER="${MARGINALIA_LLM_PROVIDER:-}"
 API_BASE="${MARGINALIA_LLM_API_BASE:-}"
 MODEL="${MARGINALIA_LLM_MODEL:-}"
@@ -438,6 +439,7 @@ export MARGINALIA_NO_MCP=1
 # uv tool update-shell regardless.
 export MARGINALIA_NO_UPDATE_SHELL=1
 export MARGINALIA_VAULT="$VAULT"
+export MARGINALIA_EXPECTED_VERSION="$EXPECTED_VERSION"
 [ "$NO_SERVE" = "1" ] && export MARGINALIA_NO_SERVE=1
 
 case "$PROFILE" in
@@ -463,10 +465,16 @@ curl -fsSL "$INSTALL_URL" | bash
 
 export PATH="$HOME/.local/bin:$PATH"
 marginalia --help | sed -n '1,12p'
+CLI_VERSION="$(marginalia --version)"
+[ "$CLI_VERSION" = "marginalia $EXPECTED_VERSION" ]
 marginalia vault current
 if [ "$NO_SERVE" != "1" ]; then
   curl -fsS http://127.0.0.1:7777/health
   printf '\n'
+  TOOL_PYTHON="$(uv tool dir)/marginalia/bin/python"
+  SERVER_VERSION="$(curl -fsS http://127.0.0.1:7777/version | \
+    "$TOOL_PYTHON" -c 'import json,sys; print(json.load(sys.stdin)["marginalia_version"])')"
+  [ "$SERVER_VERSION" = "$EXPECTED_VERSION" ]
 fi
 YAML="$HOME/.marginalia/vaults/$VAULT/marginalia.yaml"
 case "$PROFILE" in
@@ -690,6 +698,7 @@ export MARGINALIA_NO_MCP=1
 # uv tool update-shell in a sandbox run.
 export MARGINALIA_NO_UPDATE_SHELL=1
 export MARGINALIA_VAULT="$VAULT"
+export MARGINALIA_EXPECTED_VERSION="$EXPECTED_VERSION"
 [ "$NO_SERVE" = "1" ] && export MARGINALIA_NO_SERVE=1
 
 case "$PROFILE" in
@@ -715,10 +724,16 @@ curl -fsSL "$INSTALL_URL" | bash
 
 export PATH="$HOME/.local/bin:$PATH"
 marginalia --help | sed -n '1,12p'
+CLI_VERSION="$(marginalia --version)"
+[ "$CLI_VERSION" = "marginalia $EXPECTED_VERSION" ]
 marginalia vault current
 if [ "$NO_SERVE" != "1" ]; then
   curl -fsS http://127.0.0.1:7777/health
   printf '\n'
+  TOOL_PYTHON="$(uv tool dir)/marginalia/bin/python"
+  SERVER_VERSION="$(curl -fsS http://127.0.0.1:7777/version | \
+    "$TOOL_PYTHON" -c 'import json,sys; print(json.load(sys.stdin)["marginalia_version"])')"
+  [ "$SERVER_VERSION" = "$EXPECTED_VERSION" ]
 fi
 YAML="$HOME/.marginalia/vaults/$VAULT/marginalia.yaml"
 case "$PROFILE" in
@@ -965,6 +980,7 @@ run_direct() {
     # uv tool update-shell regardless.
     export MARGINALIA_NO_UPDATE_SHELL=1
     export MARGINALIA_VAULT="$VAULT"
+    export MARGINALIA_EXPECTED_VERSION="$EXPECTED_VERSION"
     [ "$NO_SERVE" -eq 1 ] && export MARGINALIA_NO_SERVE=1
     [ -n "$PROVIDER" ] && export MARGINALIA_LLM_PROVIDER="$PROVIDER"
     [ -n "$API_BASE" ] && export MARGINALIA_LLM_API_BASE="$API_BASE"
@@ -978,6 +994,17 @@ run_direct() {
   if [ -x "$tool_bin/marginalia" ]; then
     printf '\nInstalled CLI:\n'
     PATH="$tool_bin:$PATH" "$tool_bin/marginalia" --help | sed -n '1,12p'
+    CLI_VERSION="$(PATH="$tool_bin:$PATH" "$tool_bin/marginalia" --version)"
+    [ "$CLI_VERSION" = "marginalia $EXPECTED_VERSION" ] \
+      || die "CLI version '$CLI_VERSION' does not match $EXPECTED_VERSION"
+    if [ "$NO_SERVE" -ne 1 ]; then
+      tool_python="$(HOME="$TEST_HOME" XDG_DATA_HOME="$TEST_HOME/.local/share" uv tool dir)/marginalia/bin/python"
+      SERVER_VERSION="$(curl -fsS http://127.0.0.1:7777/version | \
+        "$tool_python" -c 'import json,sys; print(json.load(sys.stdin)["marginalia_version"])')"
+      [ "$SERVER_VERSION" = "$EXPECTED_VERSION" ] \
+        || die "server version '$SERVER_VERSION' does not match $EXPECTED_VERSION"
+    fi
+    printf 'Verified CLI/server version: %s\n' "$EXPECTED_VERSION"
   fi
 }
 
@@ -986,7 +1013,7 @@ run_host_tmux() {
   runner="$(write_host_runner)"
   tmux kill-session -t "$SESSION" >/dev/null 2>&1 || true
   tmux new-session -d -s "$SESSION" -x 200 -y 90 \
-    "INSTALL_URL='$INSTALL_URL' TEST_HOME='$TEST_HOME' VAULT='$VAULT' PROFILE='$PROFILE' NO_SERVE='$NO_SERVE' MODEL='$MODEL' bash '$runner'"
+    "INSTALL_URL='$INSTALL_URL' TEST_HOME='$TEST_HOME' VAULT='$VAULT' PROFILE='$PROFILE' NO_SERVE='$NO_SERVE' MODEL='$MODEL' EXPECTED_VERSION='$EXPECTED_VERSION' bash '$runner'"
   tmux set-option -t "$SESSION" remain-on-exit on
   drive_profile
   if [ "$PROFILE" != "interactive" ]; then
@@ -1011,7 +1038,7 @@ run_docker_tmux() {
   tmux kill-session -t "$SESSION" >/dev/null 2>&1 || true
   docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
   tmux new-session -d -s "$SESSION" -x 200 -y 90 \
-    "docker run --rm -it --name '$CONTAINER' -e INSTALL_URL='$INSTALL_URL' -e VAULT='$VAULT' -e PROFILE='$PROFILE' -e NO_SERVE='$NO_SERVE' -e MODEL='$MODEL' -v '$runner:/runner.sh:ro' ubuntu:24.04 bash /runner.sh"
+    "docker run --rm -it --name '$CONTAINER' -e INSTALL_URL='$INSTALL_URL' -e VAULT='$VAULT' -e PROFILE='$PROFILE' -e NO_SERVE='$NO_SERVE' -e MODEL='$MODEL' -e EXPECTED_VERSION='$EXPECTED_VERSION' -v '$runner:/runner.sh:ro' ubuntu:24.04 bash /runner.sh"
   tmux set-option -t "$SESSION" remain-on-exit on
   drive_profile
   if [ "$PROFILE" != "interactive" ]; then

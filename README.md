@@ -23,12 +23,13 @@ This takes a fresh machine from zero to a running daemon wired into Claude Code:
 3. creates a vault (`~/.marginalia/vaults/mynotes`);
 4. runs `marginalia onboard`, a provider-first wizard for auto-detect, LM Studio, Ollama, LiteLLM Proxy, OpenRouter, OpenAI, Gemini, Anthropic, custom endpoints, or skip;
 5. starts the server (web UI/REST on `:7777`, MCP on `:8201`);
-6. registers the MCP server with Claude Code.
+6. registers Claude Code with the daemon's private capability token.
 
 ## Requirements
 
 - macOS or Linux with `curl` and `bash`, or Windows with PowerShell
-- An OpenAI-compatible LLM endpoint for `ask` / `remember` (embeddings run locally, no setup)
+- An LLM provider is optional: `explore` works without one, while `ask` and
+  `remember` require one configured by `marginalia onboard`.
 
 ## Options
 
@@ -45,6 +46,9 @@ Everything is overridable by environment variable — useful under `curl … | b
 | `MARGINALIA_LLM_ALLOW_REMOTE` | — | `1` = confirm non-loopback LLM egress |
 | `MARGINALIA_ONBOARD_NONINTERACTIVE` | — | `1` = run onboarding without prompts |
 | `MARGINALIA_WHEEL` | — | install a specific wheel path/URL |
+| `MARGINALIA_EXPECTED_VERSION` | `0.0.40` | required version check; override with `MARGINALIA_WHEEL` for another release |
+| `MARGINALIA_MANIFEST` | release manifest on this repository's `main` | manifest path/URL supplying wheel URL, version, and SHA-256 |
+| `MARGINALIA_WHEEL_SHA256` | manifest SHA-256 | required when using a custom wheel without a manifest |
 | `MARGINALIA_NO_SERVE` | — | `1` = install + configure only |
 | `MARGINALIA_NO_MCP` | — | `1` = don't run `claude mcp add` |
 
@@ -89,13 +93,13 @@ onboarding for the same vault:
 ```bash
 marginalia stop --vault mynotes || true
 uv tool install --force --python 3.12 \
-  "marginalia[embeddings,ladybug,mcp,litellm,bedrock]"
+  "https://github.com/OktoLabsAI/marginalia-dist/releases/download/v0.0.40/marginalia-0.0.40-py3-none-any.whl[embeddings,ladybug,mcp,litellm,bedrock]"
 marginalia onboard --vault mynotes --reconfigure
 ```
 
 ```powershell
 marginalia stop --vault mynotes
-uv tool install --force --python 3.12 "marginalia[embeddings,ladybug,mcp,litellm,bedrock]"
+uv tool install --force --python 3.12 "https://github.com/OktoLabsAI/marginalia-dist/releases/download/v0.0.40/marginalia-0.0.40-py3-none-any.whl[embeddings,ladybug,mcp,litellm,bedrock]"
 marginalia onboard --vault mynotes --reconfigure
 ```
 
@@ -189,11 +193,33 @@ profile command is a noninteractive YAML smoke check, not prompt coverage.
 
 ## After install
 
-- Web UI: <http://127.0.0.1:7777>
+- Web UI: `marginalia ui` (opens an authenticated browser session)
 - In Claude Code: *"remember this note: …"* then *"ask Marginalia about …"*
+- Status: `marginalia status`
 - Stop: `marginalia stop --vault mynotes`
-- Pin a project to a vault in `.mcp.json`:
-  `{"mcpServers":{"marginalia":{"type":"http","url":"http://127.0.0.1:8201/mcp?vault=mynotes"}}}`
+- Update: rerun the installer. It preserves a stopped daemon, or drains and
+  restarts the same active vault when the daemon was running.
+- Uninstall the command: `uv tool uninstall marginalia` (vault data under
+  `~/.marginalia` is intentionally left in place).
+
+Install and update are transactional. The release wheel is downloaded and
+checked against `release-manifest.json`, then installed and smoke-tested in a
+temporary environment before the current daemon is stopped. The previous uv
+tool environment and command launchers are retained until the new package,
+version, and requested daemon state are verified. Any activation or restart
+failure restores the exact previous tool; a previously running daemon is also
+restarted. Vaults and provider configuration are outside this transaction and
+are never replaced.
+
+When overriding `MARGINALIA_WHEEL`, also provide a matching
+`MARGINALIA_MANIFEST` or `MARGINALIA_WHEEL_SHA256`, and override
+`MARGINALIA_EXPECTED_VERSION` when installing another version.
+
+The installer creates an authenticated user-scope Claude MCP entry. Do not add
+the raw `:8201/mcp` URL without its Bearer header; it will correctly return
+`401 Unauthorized`. To pin a project to another vault, add a project-scope HTTP
+entry with `?vault=<name>` and the same token from that vault's private
+`.marginalia/daemon.token` file.
 
 ## Connect multiple projects (multi-vault)
 
