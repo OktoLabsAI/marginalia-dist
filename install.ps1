@@ -906,7 +906,7 @@ if ($env:MARGINALIA_NO_SERVE -eq "1") {
         }
     }
     if (-not $serveOk -and (Test-Path $logPath)) {
-        Info "last 20 lines of $logPath:"
+        Info "last 20 lines of ${logPath}:"
         Get-Content -Path $logPath -Tail 20 | ForEach-Object { Info $_ }
     }
 }

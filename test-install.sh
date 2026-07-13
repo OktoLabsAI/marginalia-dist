@@ -217,7 +217,9 @@ prepare_home() {
   fi
   cleanup_previous_test_runs
   cleanup_test_home_path "$TEST_HOME"
-  command -v tmux >/dev/null 2>&1 && tmux kill-session -t "$SESSION" >/dev/null 2>&1 || true
+  if command -v tmux >/dev/null 2>&1; then
+    tmux kill-session -t "$SESSION" >/dev/null 2>&1 || true
+  fi
   if [ "$MODE" = "docker-tmux" ]; then
     docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
   fi
@@ -286,7 +288,9 @@ cleanup_sandbox() {
   if [ "$MODE" = "docker-tmux" ]; then
     docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
   fi
-  command -v tmux >/dev/null 2>&1 && tmux kill-session -t "$SESSION" >/dev/null 2>&1 || true
+  if command -v tmux >/dev/null 2>&1; then
+    tmux kill-session -t "$SESSION" >/dev/null 2>&1 || true
+  fi
   cleanup_test_home_path "$TEST_HOME"
 }
 

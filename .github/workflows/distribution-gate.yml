@@ -105,6 +105,7 @@ jobs:
       - uses: astral-sh/setup-uv@v5
         with:
           python-version: "3.12"
+          enable-cache: false
 
       - name: Verify transaction helper failure paths
         run: |
