@@ -1100,7 +1100,16 @@ jobs:
               [string]$Uri,
               [string]$OutFile
             )
-            Set-Content -LiteralPath $OutFile -Value $Uri -Encoding ASCII
+            $content = if ((Split-Path -Leaf $OutFile) -eq "predecessor-install.ps1") {
+              @(
+                'version("marginalia")',
+                'version("marginalia")',
+                'version("marginalia")'
+              )
+            } else {
+              $Uri
+            }
+            Set-Content -LiteralPath $OutFile -Value $content -Encoding ASCII
           }
           function Get-FileHash {
             param(
