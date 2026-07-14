@@ -1243,7 +1243,9 @@ try {
     if ($Profile -eq "release-lifecycle") {
         Invoke-StoppedPredecessorUpdate $InstallUrl $ExpectedVersion $ManifestUrl $TestHome
     }
-    Invoke-RestMethod -UseBasicParsing $InstallUrl | Invoke-Expression
+    & {
+        Invoke-RestMethod -UseBasicParsing $InstallUrl | Invoke-Expression
+    }
 
     $toolBin = (& uv tool dir --bin 2>$null | Select-Object -First 1)
     if ($toolBin) {
