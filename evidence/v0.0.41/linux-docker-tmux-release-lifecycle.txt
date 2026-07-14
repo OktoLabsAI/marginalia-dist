@@ -1,0 +1,1938 @@
+debconf: delaying package configuration, since apt-utils is not installed
+DRIVER_COMMIT=93d23c4f2504f333bd2a89250afa84d1762f020b
+DRIVER_URL=https://raw.githubusercontent.com/OktoLabsAI/marginalia-dist/93d23c4f2504f333bd2a89250afa84d1762f020b/test-install.sh
+DRIVER_SHA256=be3bda7471f73281115f11d0718fc4de50b4e142eab0771bbfa9263dd0f56400
+INSTALL_URL=https://raw.githubusercontent.com/OktoLabsAI/marginalia-dist/93d23c4f2504f333bd2a89250afa84d1762f020b/install.sh
+INSTALL_SHA256=8c7db8c8ca52f298c46689fb830be81803f13cf9710737e886caf66f50b4c875
+MANIFEST_URL=https://raw.githubusercontent.com/OktoLabsAI/marginalia-dist/93d23c4f2504f333bd2a89250afa84d1762f020b/release-manifest.json
+MANIFEST_SHA256=01e47fd5ffdf5f68abfd30834f6bc5ff7c448784bfa70bc175e44351ef8d62b2
+PREDECESSOR_COMMIT=19847892b7e129225011d21d6d1f2ce00f996458
+PREDECESSOR_INSTALL_URL=https://raw.githubusercontent.com/OktoLabsAI/marginalia-dist/19847892b7e129225011d21d6d1f2ce00f996458/install.sh
+PREDECESSOR_INSTALL_SHA256=55127f6a3ef35e7b0ae9bc0aeb506dc3c51b6695d9dfb759f73dd018b8870866
+PREDECESSOR_MANIFEST_URL=https://raw.githubusercontent.com/OktoLabsAI/marginalia-dist/19847892b7e129225011d21d6d1f2ce00f996458/release-manifest.json
+PREDECESSOR_MANIFEST_SHA256=619d45919b506757442b758a4898e865e5600c7da12d8c83677bb3080414c5d8
+Marginalia installer — local-first knowledge graph for Claude Code
+
+==> Checking uv (the package manager Marginalia runs through)
+    uv not found — installing from astral.sh ...
+downloading uv 0.11.28 aarch64-unknown-linux-gnu
+installing to /tmp/marginalia-predecessor-migration/.local/share/../bin
+  uv
+  uvx
+everything's installed!
+
+To add $HOME/.local/share/../bin to your PATH, either restart your shell or run:
+
+    source $HOME/.local/share/../bin/env (sh, bash, zsh)
+    source $HOME/.local/share/../bin/env.fish (fish)
+WARN: The following commands are shadowed by other commands in your PATH: uv uvx
+    uv: /tmp/marginalia-predecessor-migration/.local/bin/uv
+
+==> Ensuring Python 3.12 (uv-managed; no system Python touched)
+
+==> Resolving and staging the Marginalia candidate
+    using release wheel: https://github.com/OktoLabsAI/marginalia-dist/releases/download/v0.0.40/marginalia-0.0.40-py3-none-any.whl
+    verified wheel SHA-256: 8cdf7e0f604c5f21cb2c6ed79aecb5161ebe259835842c28795b47142b6293eb
+Using CPython 3.12.13
+Creating virtual environment at: /tmp/marginalia-predecessor-migration/tmp/tmp.ofp88MAFOD/stage
+Activate with: source tmp/marginalia-predecessor-migration/tmp/tmp.ofp88MAFOD/stage/bin/activate
+Using Python 3.12.13 environment at: /tmp/marginalia-predecessor-migration/tmp/tmp.ofp88MAFOD/stage
+Resolved 107 packages in 2.94s
+Prepared 107 packages in 1.46s
+Installed 107 packages in 48ms
+ + aiofile==3.11.1
+ + aiohappyeyeballs==2.7.1
+ + aiohttp==3.14.1
+ + aiosignal==1.4.0
+ + annotated-types==0.7.0
+ + anyio==4.14.2
+ + attrs==26.1.0
+ + authlib==1.7.2
+ + beartype==0.22.9
+ + cachetools==7.1.4
+ + caio==0.9.25
+ + certifi==2026.6.17
+ + cffi==2.1.0
+ + charset-normalizer==3.4.9
+ + click==8.4.2
+ + cryptography==49.0.0
+ + cyclopts==4.21.0
+ + distro==1.9.0
+ + dnspython==2.8.0
+ + docstring-parser==0.18.0
+ + email-validator==2.3.0
+ + exceptiongroup==1.3.1
+ + fastembed==0.8.0
+ + fastmcp==3.3.1
+ + fastmcp-slim==3.3.1
+ + fastuuid==0.14.0
+ + filelock==3.29.7
+ + flatbuffers==25.12.19
+ + frozenlist==1.8.0
+ + fsspec==2026.6.0
+ + griffelib==2.1.0
+ + h11==0.16.0
+ + hf-xet==1.5.1
+ + httpcore==1.0.9
+ + httpx==0.28.1
+ + httpx-sse==0.4.3
+ + huggingface-hub==1.23.0
+ + idna==3.18
+ + importlib-metadata==8.9.0
+ + jaraco-classes==3.4.0
+ + jaraco-context==6.1.2
+ + jaraco-functools==4.6.0
+ + jeepney==0.9.0
+ + jinja2==3.1.6
+ + jiter==0.16.0
+ + joserfc==1.7.3
+ + jsonref==1.1.0
+ + jsonschema==4.26.0
+ + jsonschema-path==0.5.0
+ + jsonschema-specifications==2025.9.1
+ + keyring==25.7.0
+ + ladybug==0.16.1
+ + litellm==1.87.5
+ + loguru==0.7.3
+ + marginalia==0.0.40 (from file:///tmp/marginalia-predecessor-migration/tmp/tmp.ofp88MAFOD/marginalia-0.0.40-py3-none-any.whl)
+ + markdown-it-py==4.2.0
+ + markupsafe==3.0.3
+ + mcp==1.28.1
+ + mdurl==0.1.2
+ + mmh3==5.2.1
+ + more-itertools==11.1.0
+ + multidict==6.7.1
+ + numpy==2.5.1
+ + onnxruntime==1.27.0
+ + openai==2.45.0
+ + openapi-pydantic==0.5.1
+ + opentelemetry-api==1.43.0
+ + packaging==26.2
+ + pathable==0.6.0
+ + pillow==12.3.0
+ + platformdirs==4.10.0
+ + propcache==0.5.2
+ + protobuf==7.35.1
+ + py-key-value-aio==0.4.5
+ + py-rust-stemmers==0.1.8
+ + pycparser==3.0
+ + pydantic==2.13.4
+ + pydantic-core==2.46.4
+ + pydantic-settings==2.14.2
+ + pygments==2.20.0
+ + pyjwt==2.13.0
+ + pyperclip==1.11.0
+ + python-dotenv==1.2.2
+ + python-multipart==0.0.32
+ + pyyaml==6.0.3
+ + referencing==0.37.0
+ + regex==2026.7.10
+ + requests==2.34.2
+ + rich==15.0.0
+ + rich-rst==2.1.0
+ + rpds-py==2026.6.3
+ + secretstorage==3.5.0
+ + sniffio==1.3.1
+ + sse-starlette==3.4.5
+ + starlette==1.3.1
+ + tiktoken==0.13.0
+ + tokenizers==0.23.1
+ + tqdm==4.68.4
+ + typing-extensions==4.16.0
+ + typing-inspection==0.4.2
+ + uncalled-for==0.3.2
+ + urllib3==2.7.0
+ + uvicorn==0.51.0
+ + watchfiles==1.2.0
+ + websockets==16.1
+ + yarl==1.24.2
+ + zipp==4.1.0
+    staged Marginalia 0.0.40; active installation is still untouched
+
+==> Activating staged Marginalia 0.0.40
+Resolved 107 packages in 14ms
+Installed 107 packages in 49ms
+ + aiofile==3.11.1
+ + aiohappyeyeballs==2.7.1
+ + aiohttp==3.14.1
+ + aiosignal==1.4.0
+ + annotated-types==0.7.0
+ + anyio==4.14.2
+ + attrs==26.1.0
+ + authlib==1.7.2
+ + beartype==0.22.9
+ + cachetools==7.1.4
+ + caio==0.9.25
+ + certifi==2026.6.17
+ + cffi==2.1.0
+ + charset-normalizer==3.4.9
+ + click==8.4.2
+ + cryptography==49.0.0
+ + cyclopts==4.21.0
+ + distro==1.9.0
+ + dnspython==2.8.0
+ + docstring-parser==0.18.0
+ + email-validator==2.3.0
+ + exceptiongroup==1.3.1
+ + fastembed==0.8.0
+ + fastmcp==3.3.1
+ + fastmcp-slim==3.3.1
+ + fastuuid==0.14.0
+ + filelock==3.29.7
+ + flatbuffers==25.12.19
+ + frozenlist==1.8.0
+ + fsspec==2026.6.0
+ + griffelib==2.1.0
+ + h11==0.16.0
+ + hf-xet==1.5.1
+ + httpcore==1.0.9
+ + httpx==0.28.1
+ + httpx-sse==0.4.3
+ + huggingface-hub==1.23.0
+ + idna==3.18
+ + importlib-metadata==8.9.0
+ + jaraco-classes==3.4.0
+ + jaraco-context==6.1.2
+ + jaraco-functools==4.6.0
+ + jeepney==0.9.0
+ + jinja2==3.1.6
+ + jiter==0.16.0
+ + joserfc==1.7.3
+ + jsonref==1.1.0
+ + jsonschema==4.26.0
+ + jsonschema-path==0.5.0
+ + jsonschema-specifications==2025.9.1
+ + keyring==25.7.0
+ + ladybug==0.16.1
+ + litellm==1.87.5
+ + loguru==0.7.3
+ + marginalia==0.0.40 (from file:///tmp/marginalia-predecessor-migration/tmp/tmp.ofp88MAFOD/marginalia-0.0.40-py3-none-any.whl)
+ + markdown-it-py==4.2.0
+ + markupsafe==3.0.3
+ + mcp==1.28.1
+ + mdurl==0.1.2
+ + mmh3==5.2.1
+ + more-itertools==11.1.0
+ + multidict==6.7.1
+ + numpy==2.5.1
+ + onnxruntime==1.27.0
+ + openai==2.45.0
+ + openapi-pydantic==0.5.1
+ + opentelemetry-api==1.43.0
+ + packaging==26.2
+ + pathable==0.6.0
+ + pillow==12.3.0
+ + platformdirs==4.10.0
+ + propcache==0.5.2
+ + protobuf==7.35.1
+ + py-key-value-aio==0.4.5
+ + py-rust-stemmers==0.1.8
+ + pycparser==3.0
+ + pydantic==2.13.4
+ + pydantic-core==2.46.4
+ + pydantic-settings==2.14.2
+ + pygments==2.20.0
+ + pyjwt==2.13.0
+ + pyperclip==1.11.0
+ + python-dotenv==1.2.2
+ + python-multipart==0.0.32
+ + pyyaml==6.0.3
+ + referencing==0.37.0
+ + regex==2026.7.10
+ + requests==2.34.2
+ + rich==15.0.0
+ + rich-rst==2.1.0
+ + rpds-py==2026.6.3
+ + secretstorage==3.5.0
+ + sniffio==1.3.1
+ + sse-starlette==3.4.5
+ + starlette==1.3.1
+ + tiktoken==0.13.0
+ + tokenizers==0.23.1
+ + tqdm==4.68.4
+ + typing-extensions==4.16.0
+ + typing-inspection==0.4.2
+ + uncalled-for==0.3.2
+ + urllib3==2.7.0
+ + uvicorn==0.51.0
+ + watchfiles==1.2.0
+ + websockets==16.1
+ + yarl==1.24.2
+ + zipp==4.1.0
+Installed 2 executables: kg, marginalia
+    marginalia: /tmp/marginalia-predecessor-migration/.local/bin/marginalia
+    version: 0.0.40
+
+==> Creating vault 'legacy-vault' (packs: core,research,personal)
+created vault legacy-vault at /tmp/marginalia-predecessor-migration/.marginalia/vaults/legacy-vault
+    created /tmp/marginalia-predecessor-migration/.marginalia/vaults/legacy-vault
+
+==> Configuring the LLM provider via 'marginalia onboard'
+    using noninteractive onboarding
+
+Marginalia onboarding complete
+  vault:    /tmp/marginalia-predecessor-migration/.marginalia/vaults/legacy-vault
+  created:  no
+  state:    not_configured
+  changed:  none
+explore works without an LLM; run 'marginalia onboard --reconfigure' to enable ask/remember.
+
+==> Starting the Marginalia daemon (UI/REST :7777 + MCP :8201)
+Marginalia is running in the background (pid=2916)
+  Open: marginalia ui --endpoint http://127.0.0.1:7777 --vault "/tmp/marginalia-predecessor-migration/.marginalia/vaults/legacy-vault"
+  Status: marginalia status --endpoint http://127.0.0.1:7777 --vault "/tmp/marginalia-predecessor-migration/.marginalia/vaults/legacy-vault"
+  Stop: marginalia stop --vault "/tmp/marginalia-predecessor-migration/.marginalia/vaults/legacy-vault"
+  Logs: /tmp/marginalia-predecessor-migration/.marginalia/logs/marginalia-serve.log
+    waiting for server version 0.0.40 ...
+    server: ready (http://127.0.0.1:7777, version 0.0.40)
+
+==> Skipping Claude Code wiring (MARGINALIA_NO_MCP=1)
+
+Marginalia 0.0.40 is ready.
+    vault    : legacy-vault
+    web UI   : marginalia ui
+    stop     : marginalia stop --vault "/tmp/marginalia-predecessor-migration/.marginalia/vaults/legacy-vault"
+    update   : re-run this installer
+RELEASE_LIFECYCLE_PREDECESSOR_RUNNING_OK
+Marginalia installer — local-first knowledge graph for Claude Code
+
+==> Checking uv (the package manager Marginalia runs through)
+    uv: uv
+
+==> Ensuring Python 3.12 (uv-managed; no system Python touched)
+
+==> Resolving and staging the Marginalia candidate
+    using release wheel: https://github.com/OktoLabsAI/marginalia-dist/releases/download/v0.0.41/marginalia-0.0.41-py3-none-any.whl
+    verified wheel SHA-256: 6842a55fe5e1180c67e81035342ee8b300f5ff2ce2aafbe48129d709a76dbfa6
+Using CPython 3.12.13
+Creating virtual environment at: /tmp/marginalia-predecessor-migration/tmp/tmp.Fhyo2gfvdp/stage
+Activate with: source tmp/marginalia-predecessor-migration/tmp/tmp.Fhyo2gfvdp/stage/bin/activate
+Using Python 3.12.13 environment at: /tmp/marginalia-predecessor-migration/tmp/tmp.Fhyo2gfvdp/stage
+Resolved 107 packages in 14ms
+Prepared 1 package in 5ms
+Installed 107 packages in 46ms
+ + aiofile==3.11.1
+ + aiohappyeyeballs==2.7.1
+ + aiohttp==3.14.1
+ + aiosignal==1.4.0
+ + annotated-types==0.7.0
+ + anyio==4.14.2
+ + attrs==26.1.0
+ + authlib==1.7.2
+ + beartype==0.22.9
+ + cachetools==7.1.4
+ + caio==0.9.25
+ + certifi==2026.6.17
+ + cffi==2.1.0
+ + charset-normalizer==3.4.9
+ + click==8.4.2
+ + cryptography==49.0.0
+ + cyclopts==4.21.0
+ + distro==1.9.0
+ + dnspython==2.8.0
+ + docstring-parser==0.18.0
+ + email-validator==2.3.0
+ + exceptiongroup==1.3.1
+ + fastembed==0.8.0
+ + fastmcp==3.3.1
+ + fastmcp-slim==3.3.1
+ + fastuuid==0.14.0
+ + filelock==3.29.7
+ + flatbuffers==25.12.19
+ + frozenlist==1.8.0
+ + fsspec==2026.6.0
+ + griffelib==2.1.0
+ + h11==0.16.0
+ + hf-xet==1.5.1
+ + httpcore==1.0.9
+ + httpx==0.28.1
+ + httpx-sse==0.4.3
+ + huggingface-hub==1.23.0
+ + idna==3.18
+ + importlib-metadata==8.9.0
+ + jaraco-classes==3.4.0
+ + jaraco-context==6.1.2
+ + jaraco-functools==4.6.0
+ + jeepney==0.9.0
+ + jinja2==3.1.6
+ + jiter==0.16.0
+ + joserfc==1.7.3
+ + jsonref==1.1.0
+ + jsonschema==4.26.0
+ + jsonschema-path==0.5.0
+ + jsonschema-specifications==2025.9.1
+ + keyring==25.7.0
+ + ladybug==0.16.1
+ + litellm==1.87.5
+ + loguru==0.7.3
+ + marginalia==0.0.41 (from file:///tmp/marginalia-predecessor-migration/tmp/tmp.Fhyo2gfvdp/marginalia-0.0.41-py3-none-any.whl)
+ + markdown-it-py==4.2.0
+ + markupsafe==3.0.3
+ + mcp==1.28.1
+ + mdurl==0.1.2
+ + mmh3==5.2.1
+ + more-itertools==11.1.0
+ + multidict==6.7.1
+ + numpy==2.5.1
+ + onnxruntime==1.27.0
+ + openai==2.45.0
+ + openapi-pydantic==0.5.1
+ + opentelemetry-api==1.43.0
+ + packaging==26.2
+ + pathable==0.6.0
+ + pillow==12.3.0
+ + platformdirs==4.10.0
+ + propcache==0.5.2
+ + protobuf==7.35.1
+ + py-key-value-aio==0.4.5
+ + py-rust-stemmers==0.1.8
+ + pycparser==3.0
+ + pydantic==2.13.4
+ + pydantic-core==2.46.4
+ + pydantic-settings==2.14.2
+ + pygments==2.20.0
+ + pyjwt==2.13.0
+ + pyperclip==1.11.0
+ + python-dotenv==1.2.2
+ + python-multipart==0.0.32
+ + pyyaml==6.0.3
+ + referencing==0.37.0
+ + regex==2026.7.10
+ + requests==2.34.2
+ + rich==15.0.0
+ + rich-rst==2.1.0
+ + rpds-py==2026.6.3
+ + secretstorage==3.5.0
+ + sniffio==1.3.1
+ + sse-starlette==3.4.5
+ + starlette==1.3.1
+ + tiktoken==0.13.0
+ + tokenizers==0.23.1
+ + tqdm==4.68.4
+ + typing-extensions==4.16.0
+ + typing-inspection==0.4.2
+ + uncalled-for==0.3.2
+ + urllib3==2.7.0
+ + uvicorn==0.51.0
+ + watchfiles==1.2.0
+ + websockets==16.1
+ + yarl==1.24.2
+ + zipp==4.1.0
+    staged Marginalia 0.0.41; active installation is still untouched
+
+==> Existing Marginalia daemon detected — updating in place
+stopping marginalia server (pid=2916); waiting up to 30.0s for drain, then escalating automatically
+stopped marginalia server (pid=2916)
+    stopped the running daemon — it will restart on the new version below
+
+==> Activating staged Marginalia 0.0.41
+error: candidate activation failed
+ !! activation failed; restoring the previous Marginalia tool
+    restored and restarted Marginalia 0.0.40
+curl: (23) Failure writing output to destination
+RELEASE_LIFECYCLE_PREDECESSOR_ROLLBACK_OK
+Marginalia installer — local-first knowledge graph for Claude Code
+
+==> Checking uv (the package manager Marginalia runs through)
+    uv: /tmp/marginalia-predecessor-migration/.local/bin/uv
+
+==> Ensuring Python 3.12 (uv-managed; no system Python touched)
+
+==> Resolving and staging the Marginalia candidate
+    using release wheel: https://github.com/OktoLabsAI/marginalia-dist/releases/download/v0.0.41/marginalia-0.0.41-py3-none-any.whl
+    verified wheel SHA-256: 6842a55fe5e1180c67e81035342ee8b300f5ff2ce2aafbe48129d709a76dbfa6
+Using CPython 3.12.13
+Creating virtual environment at: /tmp/marginalia-predecessor-migration/tmp/tmp.DzbIKOb3Ue/stage
+Activate with: source tmp/marginalia-predecessor-migration/tmp/tmp.DzbIKOb3Ue/stage/bin/activate
+Using Python 3.12.13 environment at: /tmp/marginalia-predecessor-migration/tmp/tmp.DzbIKOb3Ue/stage
+Resolved 107 packages in 16ms
+Prepared 1 package in 5ms
+Installed 107 packages in 46ms
+ + aiofile==3.11.1
+ + aiohappyeyeballs==2.7.1
+ + aiohttp==3.14.1
+ + aiosignal==1.4.0
+ + annotated-types==0.7.0
+ + anyio==4.14.2
+ + attrs==26.1.0
+ + authlib==1.7.2
+ + beartype==0.22.9
+ + cachetools==7.1.4
+ + caio==0.9.25
+ + certifi==2026.6.17
+ + cffi==2.1.0
+ + charset-normalizer==3.4.9
+ + click==8.4.2
+ + cryptography==49.0.0
+ + cyclopts==4.21.0
+ + distro==1.9.0
+ + dnspython==2.8.0
+ + docstring-parser==0.18.0
+ + email-validator==2.3.0
+ + exceptiongroup==1.3.1
+ + fastembed==0.8.0
+ + fastmcp==3.3.1
+ + fastmcp-slim==3.3.1
+ + fastuuid==0.14.0
+ + filelock==3.29.7
+ + flatbuffers==25.12.19
+ + frozenlist==1.8.0
+ + fsspec==2026.6.0
+ + griffelib==2.1.0
+ + h11==0.16.0
+ + hf-xet==1.5.1
+ + httpcore==1.0.9
+ + httpx==0.28.1
+ + httpx-sse==0.4.3
+ + huggingface-hub==1.23.0
+ + idna==3.18
+ + importlib-metadata==8.9.0
+ + jaraco-classes==3.4.0
+ + jaraco-context==6.1.2
+ + jaraco-functools==4.6.0
+ + jeepney==0.9.0
+ + jinja2==3.1.6
+ + jiter==0.16.0
+ + joserfc==1.7.3
+ + jsonref==1.1.0
+ + jsonschema==4.26.0
+ + jsonschema-path==0.5.0
+ + jsonschema-specifications==2025.9.1
+ + keyring==25.7.0
+ + ladybug==0.16.1
+ + litellm==1.87.5
+ + loguru==0.7.3
+ + marginalia==0.0.41 (from file:///tmp/marginalia-predecessor-migration/tmp/tmp.DzbIKOb3Ue/marginalia-0.0.41-py3-none-any.whl)
+ + markdown-it-py==4.2.0
+ + markupsafe==3.0.3
+ + mcp==1.28.1
+ + mdurl==0.1.2
+ + mmh3==5.2.1
+ + more-itertools==11.1.0
+ + multidict==6.7.1
+ + numpy==2.5.1
+ + onnxruntime==1.27.0
+ + openai==2.45.0
+ + openapi-pydantic==0.5.1
+ + opentelemetry-api==1.43.0
+ + packaging==26.2
+ + pathable==0.6.0
+ + pillow==12.3.0
+ + platformdirs==4.10.0
+ + propcache==0.5.2
+ + protobuf==7.35.1
+ + py-key-value-aio==0.4.5
+ + py-rust-stemmers==0.1.8
+ + pycparser==3.0
+ + pydantic==2.13.4
+ + pydantic-core==2.46.4
+ + pydantic-settings==2.14.2
+ + pygments==2.20.0
+ + pyjwt==2.13.0
+ + pyperclip==1.11.0
+ + python-dotenv==1.2.2
+ + python-multipart==0.0.32
+ + pyyaml==6.0.3
+ + referencing==0.37.0
+ + regex==2026.7.10
+ + requests==2.34.2
+ + rich==15.0.0
+ + rich-rst==2.1.0
+ + rpds-py==2026.6.3
+ + secretstorage==3.5.0
+ + sniffio==1.3.1
+ + sse-starlette==3.4.5
+ + starlette==1.3.1
+ + tiktoken==0.13.0
+ + tokenizers==0.23.1
+ + tqdm==4.68.4
+ + typing-extensions==4.16.0
+ + typing-inspection==0.4.2
+ + uncalled-for==0.3.2
+ + urllib3==2.7.0
+ + uvicorn==0.51.0
+ + watchfiles==1.2.0
+ + websockets==16.1
+ + yarl==1.24.2
+ + zipp==4.1.0
+    staged Marginalia 0.0.41; active installation is still untouched
+
+==> Existing Marginalia daemon detected — updating in place
+stopping marginalia server (pid=3091); waiting up to 30.0s for drain, then escalating automatically
+stopped marginalia server (pid=3091)
+    stopped the running daemon — it will restart on the new version below
+
+==> Activating staged Marginalia 0.0.41
+Resolved 107 packages in 19ms
+Installed 107 packages in 50ms
+ + aiofile==3.11.1
+ + aiohappyeyeballs==2.7.1
+ + aiohttp==3.14.1
+ + aiosignal==1.4.0
+ + annotated-types==0.7.0
+ + anyio==4.14.2
+ + attrs==26.1.0
+ + authlib==1.7.2
+ + beartype==0.22.9
+ + cachetools==7.1.4
+ + caio==0.9.25
+ + certifi==2026.6.17
+ + cffi==2.1.0
+ + charset-normalizer==3.4.9
+ + click==8.4.2
+ + cryptography==49.0.0
+ + cyclopts==4.21.0
+ + distro==1.9.0
+ + dnspython==2.8.0
+ + docstring-parser==0.18.0
+ + email-validator==2.3.0
+ + exceptiongroup==1.3.1
+ + fastembed==0.8.0
+ + fastmcp==3.3.1
+ + fastmcp-slim==3.3.1
+ + fastuuid==0.14.0
+ + filelock==3.29.7
+ + flatbuffers==25.12.19
+ + frozenlist==1.8.0
+ + fsspec==2026.6.0
+ + griffelib==2.1.0
+ + h11==0.16.0
+ + hf-xet==1.5.1
+ + httpcore==1.0.9
+ + httpx==0.28.1
+ + httpx-sse==0.4.3
+ + huggingface-hub==1.23.0
+ + idna==3.18
+ + importlib-metadata==8.9.0
+ + jaraco-classes==3.4.0
+ + jaraco-context==6.1.2
+ + jaraco-functools==4.6.0
+ + jeepney==0.9.0
+ + jinja2==3.1.6
+ + jiter==0.16.0
+ + joserfc==1.7.3
+ + jsonref==1.1.0
+ + jsonschema==4.26.0
+ + jsonschema-path==0.5.0
+ + jsonschema-specifications==2025.9.1
+ + keyring==25.7.0
+ + ladybug==0.16.1
+ + litellm==1.87.5
+ + loguru==0.7.3
+ + marginalia==0.0.41 (from file:///tmp/marginalia-predecessor-migration/tmp/tmp.DzbIKOb3Ue/marginalia-0.0.41-py3-none-any.whl)
+ + markdown-it-py==4.2.0
+ + markupsafe==3.0.3
+ + mcp==1.28.1
+ + mdurl==0.1.2
+ + mmh3==5.2.1
+ + more-itertools==11.1.0
+ + multidict==6.7.1
+ + numpy==2.5.1
+ + onnxruntime==1.27.0
+ + openai==2.45.0
+ + openapi-pydantic==0.5.1
+ + opentelemetry-api==1.43.0
+ + packaging==26.2
+ + pathable==0.6.0
+ + pillow==12.3.0
+ + platformdirs==4.10.0
+ + propcache==0.5.2
+ + protobuf==7.35.1
+ + py-key-value-aio==0.4.5
+ + py-rust-stemmers==0.1.8
+ + pycparser==3.0
+ + pydantic==2.13.4
+ + pydantic-core==2.46.4
+ + pydantic-settings==2.14.2
+ + pygments==2.20.0
+ + pyjwt==2.13.0
+ + pyperclip==1.11.0
+ + python-dotenv==1.2.2
+ + python-multipart==0.0.32
+ + pyyaml==6.0.3
+ + referencing==0.37.0
+ + regex==2026.7.10
+ + requests==2.34.2
+ + rich==15.0.0
+ + rich-rst==2.1.0
+ + rpds-py==2026.6.3
+ + secretstorage==3.5.0
+ + sniffio==1.3.1
+ + sse-starlette==3.4.5
+ + starlette==1.3.1
+ + tiktoken==0.13.0
+ + tokenizers==0.23.1
+ + tqdm==4.68.4
+ + typing-extensions==4.16.0
+ + typing-inspection==0.4.2
+ + uncalled-for==0.3.2
+ + urllib3==2.7.0
+ + uvicorn==0.51.0
+ + watchfiles==1.2.0
+ + websockets==16.1
+ + yarl==1.24.2
+ + zipp==4.1.0
+Installed 2 executables: kg, marginalia
+    marginalia: /tmp/marginalia-predecessor-migration/.local/bin/marginalia
+    version: 0.0.41
+
+==> Update mode — leaving your vaults, default, and LLM config untouched
+
+==> Restarting the application daemon on the new version
+Marginalia is running in the background (pid=3280)
+  UI: http://127.0.0.1:7777/
+  Status: marginalia status --endpoint http://127.0.0.1:7777
+  Stop: marginalia stop
+  Logs: /tmp/marginalia-predecessor-migration/.marginalia/logs/marginalia-serve.log
+    waiting for server version 0.0.41 ...
+    server: ready (http://127.0.0.1:7777, version 0.0.41)
+
+==> Skipping Claude Code wiring (MARGINALIA_NO_MCP=1)
+
+Marginalia 0.0.41 updated and restarted.
+    preseed vault: /tmp/marginalia-predecessor-migration/.marginalia/vaults/legacy-vault (managed independently from the daemon)
+    web UI   : http://127.0.0.1:7777/
+    stop     : marginalia stop
+    update   : re-run this installer
+Marginalia UI is ready at http://127.0.0.1:7777/; browser launch skipped
+stopping marginalia server (pid=3280); waiting up to 30.0s for drain, then escalating automatically
+stopped marginalia server (pid=3280)
+RELEASE_LIFECYCLE_PREDECESSOR_MIGRATION_OK
+PROFILE=release-lifecycle
+Marginalia installer — local-first knowledge graph for Claude Code
+
+==> Checking uv (the package manager Marginalia runs through)
+    uv not found — installing from astral.sh ...
+downloading uv 0.11.28 aarch64-unknown-linux-gnu
+installing to /root/.local/bin
+  uv
+  uvx
+everything's installed!
+
+To add $HOME/.local/bin to your PATH, either restart your shell or run:
+
+    source $HOME/.local/bin/env (sh, bash, zsh)
+    source $HOME/.local/bin/env.fish (fish)
+    uv: /root/.local/bin/uv
+
+==> Ensuring Python 3.12 (uv-managed; no system Python touched)
+
+==> Resolving and staging the Marginalia candidate
+    using release wheel: https://github.com/OktoLabsAI/marginalia-dist/releases/download/v0.0.41/marginalia-0.0.41-py3-none-any.whl
+    verified wheel SHA-256: 6842a55fe5e1180c67e81035342ee8b300f5ff2ce2aafbe48129d709a76dbfa6
+Using CPython 3.12.13
+Creating virtual environment at: /tmp/tmp.YSZ3YWok5B/stage
+Activate with: source tmp/tmp.YSZ3YWok5B/stage/bin/activate
+Using Python 3.12.13 environment at: /tmp/tmp.YSZ3YWok5B/stage
+Resolved 107 packages in 1.59s
+Prepared 107 packages in 1.52s
+Installed 107 packages in 44ms
+ + aiofile==3.11.1
+ + aiohappyeyeballs==2.7.1
+ + aiohttp==3.14.1
+ + aiosignal==1.4.0
+ + annotated-types==0.7.0
+ + anyio==4.14.2
+ + attrs==26.1.0
+ + authlib==1.7.2
+ + beartype==0.22.9
+ + cachetools==7.1.4
+ + caio==0.9.25
+ + certifi==2026.6.17
+ + cffi==2.1.0
+ + charset-normalizer==3.4.9
+ + click==8.4.2
+ + cryptography==49.0.0
+ + cyclopts==4.21.0
+ + distro==1.9.0
+ + dnspython==2.8.0
+ + docstring-parser==0.18.0
+ + email-validator==2.3.0
+ + exceptiongroup==1.3.1
+ + fastembed==0.8.0
+ + fastmcp==3.3.1
+ + fastmcp-slim==3.3.1
+ + fastuuid==0.14.0
+ + filelock==3.29.7
+ + flatbuffers==25.12.19
+ + frozenlist==1.8.0
+ + fsspec==2026.6.0
+ + griffelib==2.1.0
+ + h11==0.16.0
+ + hf-xet==1.5.1
+ + httpcore==1.0.9
+ + httpx==0.28.1
+ + httpx-sse==0.4.3
+ + huggingface-hub==1.23.0
+ + idna==3.18
+ + importlib-metadata==8.9.0
+ + jaraco-classes==3.4.0
+ + jaraco-context==6.1.2
+ + jaraco-functools==4.6.0
+ + jeepney==0.9.0
+ + jinja2==3.1.6
+ + jiter==0.16.0
+ + joserfc==1.7.3
+ + jsonref==1.1.0
+ + jsonschema==4.26.0
+ + jsonschema-path==0.5.0
+ + jsonschema-specifications==2025.9.1
+ + keyring==25.7.0
+ + ladybug==0.16.1
+ + litellm==1.87.5
+ + loguru==0.7.3
+ + marginalia==0.0.41 (from file:///tmp/tmp.YSZ3YWok5B/marginalia-0.0.41-py3-none-any.whl)
+ + markdown-it-py==4.2.0
+ + markupsafe==3.0.3
+ + mcp==1.28.1
+ + mdurl==0.1.2
+ + mmh3==5.2.1
+ + more-itertools==11.1.0
+ + multidict==6.7.1
+ + numpy==2.5.1
+ + onnxruntime==1.27.0
+ + openai==2.45.0
+ + openapi-pydantic==0.5.1
+ + opentelemetry-api==1.43.0
+ + packaging==26.2
+ + pathable==0.6.0
+ + pillow==12.3.0
+ + platformdirs==4.10.0
+ + propcache==0.5.2
+ + protobuf==7.35.1
+ + py-key-value-aio==0.4.5
+ + py-rust-stemmers==0.1.8
+ + pycparser==3.0
+ + pydantic==2.13.4
+ + pydantic-core==2.46.4
+ + pydantic-settings==2.14.2
+ + pygments==2.20.0
+ + pyjwt==2.13.0
+ + pyperclip==1.11.0
+ + python-dotenv==1.2.2
+ + python-multipart==0.0.32
+ + pyyaml==6.0.3
+ + referencing==0.37.0
+ + regex==2026.7.10
+ + requests==2.34.2
+ + rich==15.0.0
+ + rich-rst==2.1.0
+ + rpds-py==2026.6.3
+ + secretstorage==3.5.0
+ + sniffio==1.3.1
+ + sse-starlette==3.4.5
+ + starlette==1.3.1
+ + tiktoken==0.13.0
+ + tokenizers==0.23.1
+ + tqdm==4.68.4
+ + typing-extensions==4.16.0
+ + typing-inspection==0.4.2
+ + uncalled-for==0.3.2
+ + urllib3==2.7.0
+ + uvicorn==0.51.0
+ + watchfiles==1.2.0
+ + websockets==16.1
+ + yarl==1.24.2
+ + zipp==4.1.0
+    staged Marginalia 0.0.41; active installation is still untouched
+
+==> Activating staged Marginalia 0.0.41
+Resolved 107 packages in 16ms
+Installed 107 packages in 44ms
+ + aiofile==3.11.1
+ + aiohappyeyeballs==2.7.1
+ + aiohttp==3.14.1
+ + aiosignal==1.4.0
+ + annotated-types==0.7.0
+ + anyio==4.14.2
+ + attrs==26.1.0
+ + authlib==1.7.2
+ + beartype==0.22.9
+ + cachetools==7.1.4
+ + caio==0.9.25
+ + certifi==2026.6.17
+ + cffi==2.1.0
+ + charset-normalizer==3.4.9
+ + click==8.4.2
+ + cryptography==49.0.0
+ + cyclopts==4.21.0
+ + distro==1.9.0
+ + dnspython==2.8.0
+ + docstring-parser==0.18.0
+ + email-validator==2.3.0
+ + exceptiongroup==1.3.1
+ + fastembed==0.8.0
+ + fastmcp==3.3.1
+ + fastmcp-slim==3.3.1
+ + fastuuid==0.14.0
+ + filelock==3.29.7
+ + flatbuffers==25.12.19
+ + frozenlist==1.8.0
+ + fsspec==2026.6.0
+ + griffelib==2.1.0
+ + h11==0.16.0
+ + hf-xet==1.5.1
+ + httpcore==1.0.9
+ + httpx==0.28.1
+ + httpx-sse==0.4.3
+ + huggingface-hub==1.23.0
+ + idna==3.18
+ + importlib-metadata==8.9.0
+ + jaraco-classes==3.4.0
+ + jaraco-context==6.1.2
+ + jaraco-functools==4.6.0
+ + jeepney==0.9.0
+ + jinja2==3.1.6
+ + jiter==0.16.0
+ + joserfc==1.7.3
+ + jsonref==1.1.0
+ + jsonschema==4.26.0
+ + jsonschema-path==0.5.0
+ + jsonschema-specifications==2025.9.1
+ + keyring==25.7.0
+ + ladybug==0.16.1
+ + litellm==1.87.5
+ + loguru==0.7.3
+ + marginalia==0.0.41 (from file:///tmp/tmp.YSZ3YWok5B/marginalia-0.0.41-py3-none-any.whl)
+ + markdown-it-py==4.2.0
+ + markupsafe==3.0.3
+ + mcp==1.28.1
+ + mdurl==0.1.2
+ + mmh3==5.2.1
+ + more-itertools==11.1.0
+ + multidict==6.7.1
+ + numpy==2.5.1
+ + onnxruntime==1.27.0
+ + openai==2.45.0
+ + openapi-pydantic==0.5.1
+ + opentelemetry-api==1.43.0
+ + packaging==26.2
+ + pathable==0.6.0
+ + pillow==12.3.0
+ + platformdirs==4.10.0
+ + propcache==0.5.2
+ + protobuf==7.35.1
+ + py-key-value-aio==0.4.5
+ + py-rust-stemmers==0.1.8
+ + pycparser==3.0
+ + pydantic==2.13.4
+ + pydantic-core==2.46.4
+ + pydantic-settings==2.14.2
+ + pygments==2.20.0
+ + pyjwt==2.13.0
+ + pyperclip==1.11.0
+ + python-dotenv==1.2.2
+ + python-multipart==0.0.32
+ + pyyaml==6.0.3
+ + referencing==0.37.0
+ + regex==2026.7.10
+ + requests==2.34.2
+ + rich==15.0.0
+ + rich-rst==2.1.0
+ + rpds-py==2026.6.3
+ + secretstorage==3.5.0
+ + sniffio==1.3.1
+ + sse-starlette==3.4.5
+ + starlette==1.3.1
+ + tiktoken==0.13.0
+ + tokenizers==0.23.1
+ + tqdm==4.68.4
+ + typing-extensions==4.16.0
+ + typing-inspection==0.4.2
+ + uncalled-for==0.3.2
+ + urllib3==2.7.0
+ + uvicorn==0.51.0
+ + watchfiles==1.2.0
+ + websockets==16.1
+ + yarl==1.24.2
+ + zipp==4.1.0
+Installed 2 executables: kg, marginalia
+    marginalia: /root/.local/bin/marginalia
+    version: 0.0.41
+
+==> Application-first setup
+    no vault preseed requested; create, select, and configure vaults in the Web UI
+
+==> Starting the Marginalia daemon (UI/REST :7777 + MCP :8201)
+Marginalia is running in the background (pid=3590)
+  UI: http://127.0.0.1:7777/
+  Status: marginalia status --endpoint http://127.0.0.1:7777
+  Stop: marginalia stop
+  Logs: /root/.marginalia/logs/marginalia-serve.log
+    waiting for server version 0.0.41 ...
+    server: ready (http://127.0.0.1:7777, version 0.0.41)
+
+==> Skipping Claude Code wiring (MARGINALIA_NO_MCP=1)
+
+Marginalia 0.0.41 is ready.
+    vaults   : create and manage them in the Web UI
+    web UI   : http://127.0.0.1:7777/
+    stop     : marginalia stop
+    update   : re-run this installer
+Usage: marginalia [OPTIONS] COMMAND [ARGS]...
+
+  Marginalia - local-first knowledge graph.
+
+Options:
+  --version   Show the version and exit.
+  --debug     Print chained tracebacks.
+  -h, --help  Show this message and exit.
+
+Commands:
+  add           Ingest one markdown file via the running server.
+  ask           Ask a question and get a grounded, citation-bearing answer.
+{"status":"ok"}
+Marginalia UI is ready at http://127.0.0.1:7777/; browser launch skipped
+RELEASE_LIFECYCLE_APP_FIRST_OK
+created vault mynotes at /root/.marginalia/vaults/mynotes
+Marginalia UI is ready at http://127.0.0.1:7777/; browser launch skipped
+RELEASE_LIFECYCLE_FRESH_INSTALL_OK
+RELEASE_LIFECYCLE_STATUS_UI_OK
+stopping marginalia server (pid=3590); waiting up to 30.0s for drain, then escalating automatically
+stopped marginalia server (pid=3590)
+Marginalia installer — local-first knowledge graph for Claude Code
+
+==> Checking uv (the package manager Marginalia runs through)
+    uv: /root/.local/bin/uv
+
+==> Ensuring Python 3.12 (uv-managed; no system Python touched)
+
+==> Resolving and staging the Marginalia candidate
+    using release wheel: https://github.com/OktoLabsAI/marginalia-dist/releases/download/v0.0.41/marginalia-0.0.41-py3-none-any.whl
+    verified wheel SHA-256: 6842a55fe5e1180c67e81035342ee8b300f5ff2ce2aafbe48129d709a76dbfa6
+Using CPython 3.12.13
+Creating virtual environment at: /tmp/tmp.FgFChBJyAB/stage
+Activate with: source tmp/tmp.FgFChBJyAB/stage/bin/activate
+Using Python 3.12.13 environment at: /tmp/tmp.FgFChBJyAB/stage
+Resolved 107 packages in 19ms
+Prepared 1 package in 5ms
+Installed 107 packages in 42ms
+ + aiofile==3.11.1
+ + aiohappyeyeballs==2.7.1
+ + aiohttp==3.14.1
+ + aiosignal==1.4.0
+ + annotated-types==0.7.0
+ + anyio==4.14.2
+ + attrs==26.1.0
+ + authlib==1.7.2
+ + beartype==0.22.9
+ + cachetools==7.1.4
+ + caio==0.9.25
+ + certifi==2026.6.17
+ + cffi==2.1.0
+ + charset-normalizer==3.4.9
+ + click==8.4.2
+ + cryptography==49.0.0
+ + cyclopts==4.21.0
+ + distro==1.9.0
+ + dnspython==2.8.0
+ + docstring-parser==0.18.0
+ + email-validator==2.3.0
+ + exceptiongroup==1.3.1
+ + fastembed==0.8.0
+ + fastmcp==3.3.1
+ + fastmcp-slim==3.3.1
+ + fastuuid==0.14.0
+ + filelock==3.29.7
+ + flatbuffers==25.12.19
+ + frozenlist==1.8.0
+ + fsspec==2026.6.0
+ + griffelib==2.1.0
+ + h11==0.16.0
+ + hf-xet==1.5.1
+ + httpcore==1.0.9
+ + httpx==0.28.1
+ + httpx-sse==0.4.3
+ + huggingface-hub==1.23.0
+ + idna==3.18
+ + importlib-metadata==8.9.0
+ + jaraco-classes==3.4.0
+ + jaraco-context==6.1.2
+ + jaraco-functools==4.6.0
+ + jeepney==0.9.0
+ + jinja2==3.1.6
+ + jiter==0.16.0
+ + joserfc==1.7.3
+ + jsonref==1.1.0
+ + jsonschema==4.26.0
+ + jsonschema-path==0.5.0
+ + jsonschema-specifications==2025.9.1
+ + keyring==25.7.0
+ + ladybug==0.16.1
+ + litellm==1.87.5
+ + loguru==0.7.3
+ + marginalia==0.0.41 (from file:///tmp/tmp.FgFChBJyAB/marginalia-0.0.41-py3-none-any.whl)
+ + markdown-it-py==4.2.0
+ + markupsafe==3.0.3
+ + mcp==1.28.1
+ + mdurl==0.1.2
+ + mmh3==5.2.1
+ + more-itertools==11.1.0
+ + multidict==6.7.1
+ + numpy==2.5.1
+ + onnxruntime==1.27.0
+ + openai==2.45.0
+ + openapi-pydantic==0.5.1
+ + opentelemetry-api==1.43.0
+ + packaging==26.2
+ + pathable==0.6.0
+ + pillow==12.3.0
+ + platformdirs==4.10.0
+ + propcache==0.5.2
+ + protobuf==7.35.1
+ + py-key-value-aio==0.4.5
+ + py-rust-stemmers==0.1.8
+ + pycparser==3.0
+ + pydantic==2.13.4
+ + pydantic-core==2.46.4
+ + pydantic-settings==2.14.2
+ + pygments==2.20.0
+ + pyjwt==2.13.0
+ + pyperclip==1.11.0
+ + python-dotenv==1.2.2
+ + python-multipart==0.0.32
+ + pyyaml==6.0.3
+ + referencing==0.37.0
+ + regex==2026.7.10
+ + requests==2.34.2
+ + rich==15.0.0
+ + rich-rst==2.1.0
+ + rpds-py==2026.6.3
+ + secretstorage==3.5.0
+ + sniffio==1.3.1
+ + sse-starlette==3.4.5
+ + starlette==1.3.1
+ + tiktoken==0.13.0
+ + tokenizers==0.23.1
+ + tqdm==4.68.4
+ + typing-extensions==4.16.0
+ + typing-inspection==0.4.2
+ + uncalled-for==0.3.2
+ + urllib3==2.7.0
+ + uvicorn==0.51.0
+ + watchfiles==1.2.0
+ + websockets==16.1
+ + yarl==1.24.2
+ + zipp==4.1.0
+    staged Marginalia 0.0.41; active installation is still untouched
+
+==> Existing Marginalia install detected (daemon not running) — updating in place
+
+==> Activating staged Marginalia 0.0.41
+Resolved 107 packages in 15ms
+Installed 107 packages in 45ms
+ + aiofile==3.11.1
+ + aiohappyeyeballs==2.7.1
+ + aiohttp==3.14.1
+ + aiosignal==1.4.0
+ + annotated-types==0.7.0
+ + anyio==4.14.2
+ + attrs==26.1.0
+ + authlib==1.7.2
+ + beartype==0.22.9
+ + cachetools==7.1.4
+ + caio==0.9.25
+ + certifi==2026.6.17
+ + cffi==2.1.0
+ + charset-normalizer==3.4.9
+ + click==8.4.2
+ + cryptography==49.0.0
+ + cyclopts==4.21.0
+ + distro==1.9.0
+ + dnspython==2.8.0
+ + docstring-parser==0.18.0
+ + email-validator==2.3.0
+ + exceptiongroup==1.3.1
+ + fastembed==0.8.0
+ + fastmcp==3.3.1
+ + fastmcp-slim==3.3.1
+ + fastuuid==0.14.0
+ + filelock==3.29.7
+ + flatbuffers==25.12.19
+ + frozenlist==1.8.0
+ + fsspec==2026.6.0
+ + griffelib==2.1.0
+ + h11==0.16.0
+ + hf-xet==1.5.1
+ + httpcore==1.0.9
+ + httpx==0.28.1
+ + httpx-sse==0.4.3
+ + huggingface-hub==1.23.0
+ + idna==3.18
+ + importlib-metadata==8.9.0
+ + jaraco-classes==3.4.0
+ + jaraco-context==6.1.2
+ + jaraco-functools==4.6.0
+ + jeepney==0.9.0
+ + jinja2==3.1.6
+ + jiter==0.16.0
+ + joserfc==1.7.3
+ + jsonref==1.1.0
+ + jsonschema==4.26.0
+ + jsonschema-path==0.5.0
+ + jsonschema-specifications==2025.9.1
+ + keyring==25.7.0
+ + ladybug==0.16.1
+ + litellm==1.87.5
+ + loguru==0.7.3
+ + marginalia==0.0.41 (from file:///tmp/tmp.FgFChBJyAB/marginalia-0.0.41-py3-none-any.whl)
+ + markdown-it-py==4.2.0
+ + markupsafe==3.0.3
+ + mcp==1.28.1
+ + mdurl==0.1.2
+ + mmh3==5.2.1
+ + more-itertools==11.1.0
+ + multidict==6.7.1
+ + numpy==2.5.1
+ + onnxruntime==1.27.0
+ + openai==2.45.0
+ + openapi-pydantic==0.5.1
+ + opentelemetry-api==1.43.0
+ + packaging==26.2
+ + pathable==0.6.0
+ + pillow==12.3.0
+ + platformdirs==4.10.0
+ + propcache==0.5.2
+ + protobuf==7.35.1
+ + py-key-value-aio==0.4.5
+ + py-rust-stemmers==0.1.8
+ + pycparser==3.0
+ + pydantic==2.13.4
+ + pydantic-core==2.46.4
+ + pydantic-settings==2.14.2
+ + pygments==2.20.0
+ + pyjwt==2.13.0
+ + pyperclip==1.11.0
+ + python-dotenv==1.2.2
+ + python-multipart==0.0.32
+ + pyyaml==6.0.3
+ + referencing==0.37.0
+ + regex==2026.7.10
+ + requests==2.34.2
+ + rich==15.0.0
+ + rich-rst==2.1.0
+ + rpds-py==2026.6.3
+ + secretstorage==3.5.0
+ + sniffio==1.3.1
+ + sse-starlette==3.4.5
+ + starlette==1.3.1
+ + tiktoken==0.13.0
+ + tokenizers==0.23.1
+ + tqdm==4.68.4
+ + typing-extensions==4.16.0
+ + typing-inspection==0.4.2
+ + uncalled-for==0.3.2
+ + urllib3==2.7.0
+ + uvicorn==0.51.0
+ + watchfiles==1.2.0
+ + websockets==16.1
+ + yarl==1.24.2
+ + zipp==4.1.0
+Installed 2 executables: kg, marginalia
+    marginalia: /root/.local/bin/marginalia
+    version: 0.0.41
+
+==> Update mode — leaving your vaults, default, and LLM config untouched
+
+==> Preserving stopped daemon state
+    the daemon was stopped before this update, so it remains stopped
+
+==> Skipping Claude Code wiring (MARGINALIA_NO_MCP=1)
+
+Marginalia 0.0.41 updated; daemon remains stopped.
+    vaults   : create and manage them in the Web UI
+    start    : marginalia serve --daemon
+    update   : re-run this installer
+RELEASE_LIFECYCLE_STOPPED_UPDATE_OK
+Marginalia is running in the background (pid=3814)
+  UI: http://127.0.0.1:7777/
+  Status: marginalia status --endpoint http://127.0.0.1:7777
+  Stop: marginalia stop
+  Logs: /root/.marginalia/logs/marginalia-serve.log
+Marginalia UI is ready at http://127.0.0.1:7777/; browser launch skipped
+Marginalia installer — local-first knowledge graph for Claude Code
+
+==> Checking uv (the package manager Marginalia runs through)
+    uv: /root/.local/bin/uv
+
+==> Ensuring Python 3.12 (uv-managed; no system Python touched)
+
+==> Resolving and staging the Marginalia candidate
+    using release wheel: https://github.com/OktoLabsAI/marginalia-dist/releases/download/v0.0.41/marginalia-0.0.41-py3-none-any.whl
+    verified wheel SHA-256: 6842a55fe5e1180c67e81035342ee8b300f5ff2ce2aafbe48129d709a76dbfa6
+Using CPython 3.12.13
+Creating virtual environment at: /tmp/tmp.sX2FhPwqW1/stage
+Activate with: source tmp/tmp.sX2FhPwqW1/stage/bin/activate
+Using Python 3.12.13 environment at: /tmp/tmp.sX2FhPwqW1/stage
+Resolved 107 packages in 17ms
+Prepared 1 package in 5ms
+Installed 107 packages in 40ms
+ + aiofile==3.11.1
+ + aiohappyeyeballs==2.7.1
+ + aiohttp==3.14.1
+ + aiosignal==1.4.0
+ + annotated-types==0.7.0
+ + anyio==4.14.2
+ + attrs==26.1.0
+ + authlib==1.7.2
+ + beartype==0.22.9
+ + cachetools==7.1.4
+ + caio==0.9.25
+ + certifi==2026.6.17
+ + cffi==2.1.0
+ + charset-normalizer==3.4.9
+ + click==8.4.2
+ + cryptography==49.0.0
+ + cyclopts==4.21.0
+ + distro==1.9.0
+ + dnspython==2.8.0
+ + docstring-parser==0.18.0
+ + email-validator==2.3.0
+ + exceptiongroup==1.3.1
+ + fastembed==0.8.0
+ + fastmcp==3.3.1
+ + fastmcp-slim==3.3.1
+ + fastuuid==0.14.0
+ + filelock==3.29.7
+ + flatbuffers==25.12.19
+ + frozenlist==1.8.0
+ + fsspec==2026.6.0
+ + griffelib==2.1.0
+ + h11==0.16.0
+ + hf-xet==1.5.1
+ + httpcore==1.0.9
+ + httpx==0.28.1
+ + httpx-sse==0.4.3
+ + huggingface-hub==1.23.0
+ + idna==3.18
+ + importlib-metadata==8.9.0
+ + jaraco-classes==3.4.0
+ + jaraco-context==6.1.2
+ + jaraco-functools==4.6.0
+ + jeepney==0.9.0
+ + jinja2==3.1.6
+ + jiter==0.16.0
+ + joserfc==1.7.3
+ + jsonref==1.1.0
+ + jsonschema==4.26.0
+ + jsonschema-path==0.5.0
+ + jsonschema-specifications==2025.9.1
+ + keyring==25.7.0
+ + ladybug==0.16.1
+ + litellm==1.87.5
+ + loguru==0.7.3
+ + marginalia==0.0.41 (from file:///tmp/tmp.sX2FhPwqW1/marginalia-0.0.41-py3-none-any.whl)
+ + markdown-it-py==4.2.0
+ + markupsafe==3.0.3
+ + mcp==1.28.1
+ + mdurl==0.1.2
+ + mmh3==5.2.1
+ + more-itertools==11.1.0
+ + multidict==6.7.1
+ + numpy==2.5.1
+ + onnxruntime==1.27.0
+ + openai==2.45.0
+ + openapi-pydantic==0.5.1
+ + opentelemetry-api==1.43.0
+ + packaging==26.2
+ + pathable==0.6.0
+ + pillow==12.3.0
+ + platformdirs==4.10.0
+ + propcache==0.5.2
+ + protobuf==7.35.1
+ + py-key-value-aio==0.4.5
+ + py-rust-stemmers==0.1.8
+ + pycparser==3.0
+ + pydantic==2.13.4
+ + pydantic-core==2.46.4
+ + pydantic-settings==2.14.2
+ + pygments==2.20.0
+ + pyjwt==2.13.0
+ + pyperclip==1.11.0
+ + python-dotenv==1.2.2
+ + python-multipart==0.0.32
+ + pyyaml==6.0.3
+ + referencing==0.37.0
+ + regex==2026.7.10
+ + requests==2.34.2
+ + rich==15.0.0
+ + rich-rst==2.1.0
+ + rpds-py==2026.6.3
+ + secretstorage==3.5.0
+ + sniffio==1.3.1
+ + sse-starlette==3.4.5
+ + starlette==1.3.1
+ + tiktoken==0.13.0
+ + tokenizers==0.23.1
+ + tqdm==4.68.4
+ + typing-extensions==4.16.0
+ + typing-inspection==0.4.2
+ + uncalled-for==0.3.2
+ + urllib3==2.7.0
+ + uvicorn==0.51.0
+ + watchfiles==1.2.0
+ + websockets==16.1
+ + yarl==1.24.2
+ + zipp==4.1.0
+    staged Marginalia 0.0.41; active installation is still untouched
+
+==> Existing Marginalia daemon detected — updating in place
+stopping marginalia server (pid=3814); waiting up to 30.0s for drain, then escalating automatically
+stopped marginalia server (pid=3814)
+    stopped the running daemon — it will restart on the new version below
+
+==> Activating staged Marginalia 0.0.41
+Resolved 107 packages in 21ms
+Installed 107 packages in 48ms
+ + aiofile==3.11.1
+ + aiohappyeyeballs==2.7.1
+ + aiohttp==3.14.1
+ + aiosignal==1.4.0
+ + annotated-types==0.7.0
+ + anyio==4.14.2
+ + attrs==26.1.0
+ + authlib==1.7.2
+ + beartype==0.22.9
+ + cachetools==7.1.4
+ + caio==0.9.25
+ + certifi==2026.6.17
+ + cffi==2.1.0
+ + charset-normalizer==3.4.9
+ + click==8.4.2
+ + cryptography==49.0.0
+ + cyclopts==4.21.0
+ + distro==1.9.0
+ + dnspython==2.8.0
+ + docstring-parser==0.18.0
+ + email-validator==2.3.0
+ + exceptiongroup==1.3.1
+ + fastembed==0.8.0
+ + fastmcp==3.3.1
+ + fastmcp-slim==3.3.1
+ + fastuuid==0.14.0
+ + filelock==3.29.7
+ + flatbuffers==25.12.19
+ + frozenlist==1.8.0
+ + fsspec==2026.6.0
+ + griffelib==2.1.0
+ + h11==0.16.0
+ + hf-xet==1.5.1
+ + httpcore==1.0.9
+ + httpx==0.28.1
+ + httpx-sse==0.4.3
+ + huggingface-hub==1.23.0
+ + idna==3.18
+ + importlib-metadata==8.9.0
+ + jaraco-classes==3.4.0
+ + jaraco-context==6.1.2
+ + jaraco-functools==4.6.0
+ + jeepney==0.9.0
+ + jinja2==3.1.6
+ + jiter==0.16.0
+ + joserfc==1.7.3
+ + jsonref==1.1.0
+ + jsonschema==4.26.0
+ + jsonschema-path==0.5.0
+ + jsonschema-specifications==2025.9.1
+ + keyring==25.7.0
+ + ladybug==0.16.1
+ + litellm==1.87.5
+ + loguru==0.7.3
+ + marginalia==0.0.41 (from file:///tmp/tmp.sX2FhPwqW1/marginalia-0.0.41-py3-none-any.whl)
+ + markdown-it-py==4.2.0
+ + markupsafe==3.0.3
+ + mcp==1.28.1
+ + mdurl==0.1.2
+ + mmh3==5.2.1
+ + more-itertools==11.1.0
+ + multidict==6.7.1
+ + numpy==2.5.1
+ + onnxruntime==1.27.0
+ + openai==2.45.0
+ + openapi-pydantic==0.5.1
+ + opentelemetry-api==1.43.0
+ + packaging==26.2
+ + pathable==0.6.0
+ + pillow==12.3.0
+ + platformdirs==4.10.0
+ + propcache==0.5.2
+ + protobuf==7.35.1
+ + py-key-value-aio==0.4.5
+ + py-rust-stemmers==0.1.8
+ + pycparser==3.0
+ + pydantic==2.13.4
+ + pydantic-core==2.46.4
+ + pydantic-settings==2.14.2
+ + pygments==2.20.0
+ + pyjwt==2.13.0
+ + pyperclip==1.11.0
+ + python-dotenv==1.2.2
+ + python-multipart==0.0.32
+ + pyyaml==6.0.3
+ + referencing==0.37.0
+ + regex==2026.7.10
+ + requests==2.34.2
+ + rich==15.0.0
+ + rich-rst==2.1.0
+ + rpds-py==2026.6.3
+ + secretstorage==3.5.0
+ + sniffio==1.3.1
+ + sse-starlette==3.4.5
+ + starlette==1.3.1
+ + tiktoken==0.13.0
+ + tokenizers==0.23.1
+ + tqdm==4.68.4
+ + typing-extensions==4.16.0
+ + typing-inspection==0.4.2
+ + uncalled-for==0.3.2
+ + urllib3==2.7.0
+ + uvicorn==0.51.0
+ + watchfiles==1.2.0
+ + websockets==16.1
+ + yarl==1.24.2
+ + zipp==4.1.0
+Installed 2 executables: kg, marginalia
+    marginalia: /root/.local/bin/marginalia
+    version: 0.0.41
+
+==> Update mode — leaving your vaults, default, and LLM config untouched
+
+==> Restarting the application daemon on the new version
+Marginalia is running in the background (pid=3985)
+  UI: http://127.0.0.1:7777/
+  Status: marginalia status --endpoint http://127.0.0.1:7777
+  Stop: marginalia stop
+  Logs: /root/.marginalia/logs/marginalia-serve.log
+    waiting for server version 0.0.41 ...
+    server: ready (http://127.0.0.1:7777, version 0.0.41)
+
+==> Skipping Claude Code wiring (MARGINALIA_NO_MCP=1)
+
+Marginalia 0.0.41 updated and restarted.
+    vaults   : create and manage them in the Web UI
+    web UI   : http://127.0.0.1:7777/
+    stop     : marginalia stop
+    update   : re-run this installer
+Marginalia UI is ready at http://127.0.0.1:7777/; browser launch skipped
+RELEASE_LIFECYCLE_RUNNING_UPDATE_OK
+stopping marginalia server (pid=3985); waiting up to 30.0s for drain, then escalating automatically
+stopped marginalia server (pid=3985)
+Marginalia is running in the background (pid=4034)
+  UI: http://127.0.0.1:7788/
+  Status: marginalia status --endpoint http://127.0.0.1:7788
+  Stop: marginalia stop
+  Logs: /root/.marginalia/logs/marginalia-serve.log
+Marginalia installer — local-first knowledge graph for Claude Code
+
+==> Checking uv (the package manager Marginalia runs through)
+    uv: /root/.local/bin/uv
+
+==> Ensuring Python 3.12 (uv-managed; no system Python touched)
+
+==> Resolving and staging the Marginalia candidate
+    using release wheel: https://github.com/OktoLabsAI/marginalia-dist/releases/download/v0.0.41/marginalia-0.0.41-py3-none-any.whl
+    verified wheel SHA-256: 6842a55fe5e1180c67e81035342ee8b300f5ff2ce2aafbe48129d709a76dbfa6
+Using CPython 3.12.13
+Creating virtual environment at: /tmp/tmp.COzyG2UHBI/stage
+Activate with: source tmp/tmp.COzyG2UHBI/stage/bin/activate
+Using Python 3.12.13 environment at: /tmp/tmp.COzyG2UHBI/stage
+Resolved 107 packages in 20ms
+Prepared 1 package in 11ms
+Installed 107 packages in 44ms
+ + aiofile==3.11.1
+ + aiohappyeyeballs==2.7.1
+ + aiohttp==3.14.1
+ + aiosignal==1.4.0
+ + annotated-types==0.7.0
+ + anyio==4.14.2
+ + attrs==26.1.0
+ + authlib==1.7.2
+ + beartype==0.22.9
+ + cachetools==7.1.4
+ + caio==0.9.25
+ + certifi==2026.6.17
+ + cffi==2.1.0
+ + charset-normalizer==3.4.9
+ + click==8.4.2
+ + cryptography==49.0.0
+ + cyclopts==4.21.0
+ + distro==1.9.0
+ + dnspython==2.8.0
+ + docstring-parser==0.18.0
+ + email-validator==2.3.0
+ + exceptiongroup==1.3.1
+ + fastembed==0.8.0
+ + fastmcp==3.3.1
+ + fastmcp-slim==3.3.1
+ + fastuuid==0.14.0
+ + filelock==3.29.7
+ + flatbuffers==25.12.19
+ + frozenlist==1.8.0
+ + fsspec==2026.6.0
+ + griffelib==2.1.0
+ + h11==0.16.0
+ + hf-xet==1.5.1
+ + httpcore==1.0.9
+ + httpx==0.28.1
+ + httpx-sse==0.4.3
+ + huggingface-hub==1.23.0
+ + idna==3.18
+ + importlib-metadata==8.9.0
+ + jaraco-classes==3.4.0
+ + jaraco-context==6.1.2
+ + jaraco-functools==4.6.0
+ + jeepney==0.9.0
+ + jinja2==3.1.6
+ + jiter==0.16.0
+ + joserfc==1.7.3
+ + jsonref==1.1.0
+ + jsonschema==4.26.0
+ + jsonschema-path==0.5.0
+ + jsonschema-specifications==2025.9.1
+ + keyring==25.7.0
+ + ladybug==0.16.1
+ + litellm==1.87.5
+ + loguru==0.7.3
+ + marginalia==0.0.41 (from file:///tmp/tmp.COzyG2UHBI/marginalia-0.0.41-py3-none-any.whl)
+ + markdown-it-py==4.2.0
+ + markupsafe==3.0.3
+ + mcp==1.28.1
+ + mdurl==0.1.2
+ + mmh3==5.2.1
+ + more-itertools==11.1.0
+ + multidict==6.7.1
+ + numpy==2.5.1
+ + onnxruntime==1.27.0
+ + openai==2.45.0
+ + openapi-pydantic==0.5.1
+ + opentelemetry-api==1.43.0
+ + packaging==26.2
+ + pathable==0.6.0
+ + pillow==12.3.0
+ + platformdirs==4.10.0
+ + propcache==0.5.2
+ + protobuf==7.35.1
+ + py-key-value-aio==0.4.5
+ + py-rust-stemmers==0.1.8
+ + pycparser==3.0
+ + pydantic==2.13.4
+ + pydantic-core==2.46.4
+ + pydantic-settings==2.14.2
+ + pygments==2.20.0
+ + pyjwt==2.13.0
+ + pyperclip==1.11.0
+ + python-dotenv==1.2.2
+ + python-multipart==0.0.32
+ + pyyaml==6.0.3
+ + referencing==0.37.0
+ + regex==2026.7.10
+ + requests==2.34.2
+ + rich==15.0.0
+ + rich-rst==2.1.0
+ + rpds-py==2026.6.3
+ + secretstorage==3.5.0
+ + sniffio==1.3.1
+ + sse-starlette==3.4.5
+ + starlette==1.3.1
+ + tiktoken==0.13.0
+ + tokenizers==0.23.1
+ + tqdm==4.68.4
+ + typing-extensions==4.16.0
+ + typing-inspection==0.4.2
+ + uncalled-for==0.3.2
+ + urllib3==2.7.0
+ + uvicorn==0.51.0
+ + watchfiles==1.2.0
+ + websockets==16.1
+ + yarl==1.24.2
+ + zipp==4.1.0
+    staged Marginalia 0.0.41; active installation is still untouched
+error: live Marginalia daemon uses custom endpoint http://127.0.0.1:7788; update aborted before shutdown because the installer cannot preserve custom ports automatically. Stop it first: marginalia sto
+p
+curl: (23) Failure writing output to destination
+stopping marginalia server (pid=4034); waiting up to 30.0s for drain, then escalating automatically
+stopped marginalia server (pid=4034)
+RELEASE_LIFECYCLE_CUSTOM_PORT_REFUSAL_OK
+canonical application PID owner verified: version=1 pid=4167
+Marginalia installer — local-first knowledge graph for Claude Code
+
+==> Checking uv (the package manager Marginalia runs through)
+    uv: /root/.local/bin/uv
+
+==> Ensuring Python 3.12 (uv-managed; no system Python touched)
+
+==> Resolving and staging the Marginalia candidate
+    using release wheel: https://github.com/OktoLabsAI/marginalia-dist/releases/download/v0.0.41/marginalia-0.0.41-py3-none-any.whl
+    verified wheel SHA-256: 6842a55fe5e1180c67e81035342ee8b300f5ff2ce2aafbe48129d709a76dbfa6
+Using CPython 3.12.13
+Creating virtual environment at: /tmp/tmp.0lY9a2XYUN/stage
+Activate with: source tmp/tmp.0lY9a2XYUN/stage/bin/activate
+Using Python 3.12.13 environment at: /tmp/tmp.0lY9a2XYUN/stage
+Resolved 107 packages in 17ms
+Prepared 1 package in 4ms
+Installed 107 packages in 46ms
+ + aiofile==3.11.1
+ + aiohappyeyeballs==2.7.1
+ + aiohttp==3.14.1
+ + aiosignal==1.4.0
+ + annotated-types==0.7.0
+ + anyio==4.14.2
+ + attrs==26.1.0
+ + authlib==1.7.2
+ + beartype==0.22.9
+ + cachetools==7.1.4
+ + caio==0.9.25
+ + certifi==2026.6.17
+ + cffi==2.1.0
+ + charset-normalizer==3.4.9
+ + click==8.4.2
+ + cryptography==49.0.0
+ + cyclopts==4.21.0
+ + distro==1.9.0
+ + dnspython==2.8.0
+ + docstring-parser==0.18.0
+ + email-validator==2.3.0
+ + exceptiongroup==1.3.1
+ + fastembed==0.8.0
+ + fastmcp==3.3.1
+ + fastmcp-slim==3.3.1
+ + fastuuid==0.14.0
+ + filelock==3.29.7
+ + flatbuffers==25.12.19
+ + frozenlist==1.8.0
+ + fsspec==2026.6.0
+ + griffelib==2.1.0
+ + h11==0.16.0
+ + hf-xet==1.5.1
+ + httpcore==1.0.9
+ + httpx==0.28.1
+ + httpx-sse==0.4.3
+ + huggingface-hub==1.23.0
+ + idna==3.18
+ + importlib-metadata==8.9.0
+ + jaraco-classes==3.4.0
+ + jaraco-context==6.1.2
+ + jaraco-functools==4.6.0
+ + jeepney==0.9.0
+ + jinja2==3.1.6
+ + jiter==0.16.0
+ + joserfc==1.7.3
+ + jsonref==1.1.0
+ + jsonschema==4.26.0
+ + jsonschema-path==0.5.0
+ + jsonschema-specifications==2025.9.1
+ + keyring==25.7.0
+ + ladybug==0.16.1
+ + litellm==1.87.5
+ + loguru==0.7.3
+ + marginalia==0.0.41 (from file:///tmp/tmp.0lY9a2XYUN/marginalia-0.0.41-py3-none-any.whl)
+ + markdown-it-py==4.2.0
+ + markupsafe==3.0.3
+ + mcp==1.28.1
+ + mdurl==0.1.2
+ + mmh3==5.2.1
+ + more-itertools==11.1.0
+ + multidict==6.7.1
+ + numpy==2.5.1
+ + onnxruntime==1.27.0
+ + openai==2.45.0
+ + openapi-pydantic==0.5.1
+ + opentelemetry-api==1.43.0
+ + packaging==26.2
+ + pathable==0.6.0
+ + pillow==12.3.0
+ + platformdirs==4.10.0
+ + propcache==0.5.2
+ + protobuf==7.35.1
+ + py-key-value-aio==0.4.5
+ + py-rust-stemmers==0.1.8
+ + pycparser==3.0
+ + pydantic==2.13.4
+ + pydantic-core==2.46.4
+ + pydantic-settings==2.14.2
+ + pygments==2.20.0
+ + pyjwt==2.13.0
+ + pyperclip==1.11.0
+ + python-dotenv==1.2.2
+ + python-multipart==0.0.32
+ + pyyaml==6.0.3
+ + referencing==0.37.0
+ + regex==2026.7.10
+ + requests==2.34.2
+ + rich==15.0.0
+ + rich-rst==2.1.0
+ + rpds-py==2026.6.3
+ + secretstorage==3.5.0
+ + sniffio==1.3.1
+ + sse-starlette==3.4.5
+ + starlette==1.3.1
+ + tiktoken==0.13.0
+ + tokenizers==0.23.1
+ + tqdm==4.68.4
+ + typing-extensions==4.16.0
+ + typing-inspection==0.4.2
+ + uncalled-for==0.3.2
+ + urllib3==2.7.0
+ + uvicorn==0.51.0
+ + watchfiles==1.2.0
+ + websockets==16.1
+ + yarl==1.24.2
+ + zipp==4.1.0
+    staged Marginalia 0.0.41; active installation is still untouched
+error: live Marginalia daemon (pid 4167) has an application PID record at /root/.marginalia/runtime/.marginalia/server.pid, but status at http://127.0.0.1:7777 is unavailable; update aborted before re
+placing the installed tool. Stop it first: marginalia stop. If it uses custom ports, stop it manually and rerun.
+curl: (23) Failure writing output to destination
+canonical application PID owner verified: version=1 pid=4167
+RELEASE_LIFECYCLE_LIVE_PID_REFUSAL_OK
+Marginalia is running in the background (pid=4298)
+  UI: http://127.0.0.1:7777/
+  Status: marginalia status --endpoint http://127.0.0.1:7777
+  Stop: marginalia stop
+  Logs: /root/.marginalia/logs/marginalia-serve.log
+Marginalia UI is ready at http://127.0.0.1:7777/; browser launch skipped
+Marginalia installer — local-first knowledge graph for Claude Code
+
+==> Checking uv (the package manager Marginalia runs through)
+    uv: uv
+
+==> Ensuring Python 3.12 (uv-managed; no system Python touched)
+
+==> Resolving and staging the Marginalia candidate
+    using release wheel: https://github.com/OktoLabsAI/marginalia-dist/releases/download/v0.0.41/marginalia-0.0.41-py3-none-any.whl
+    verified wheel SHA-256: 6842a55fe5e1180c67e81035342ee8b300f5ff2ce2aafbe48129d709a76dbfa6
+Using CPython 3.12.13
+Creating virtual environment at: /tmp/tmp.zHAyZZRuFe/stage
+Activate with: source tmp/tmp.zHAyZZRuFe/stage/bin/activate
+Using Python 3.12.13 environment at: /tmp/tmp.zHAyZZRuFe/stage
+Resolved 107 packages in 17ms
+Prepared 1 package in 5ms
+Installed 107 packages in 39ms
+ + aiofile==3.11.1
+ + aiohappyeyeballs==2.7.1
+ + aiohttp==3.14.1
+ + aiosignal==1.4.0
+ + annotated-types==0.7.0
+ + anyio==4.14.2
+ + attrs==26.1.0
+ + authlib==1.7.2
+ + beartype==0.22.9
+ + cachetools==7.1.4
+ + caio==0.9.25
+ + certifi==2026.6.17
+ + cffi==2.1.0
+ + charset-normalizer==3.4.9
+ + click==8.4.2
+ + cryptography==49.0.0
+ + cyclopts==4.21.0
+ + distro==1.9.0
+ + dnspython==2.8.0
+ + docstring-parser==0.18.0
+ + email-validator==2.3.0
+ + exceptiongroup==1.3.1
+ + fastembed==0.8.0
+ + fastmcp==3.3.1
+ + fastmcp-slim==3.3.1
+ + fastuuid==0.14.0
+ + filelock==3.29.7
+ + flatbuffers==25.12.19
+ + frozenlist==1.8.0
+ + fsspec==2026.6.0
+ + griffelib==2.1.0
+ + h11==0.16.0
+ + hf-xet==1.5.1
+ + httpcore==1.0.9
+ + httpx==0.28.1
+ + httpx-sse==0.4.3
+ + huggingface-hub==1.23.0
+ + idna==3.18
+ + importlib-metadata==8.9.0
+ + jaraco-classes==3.4.0
+ + jaraco-context==6.1.2
+ + jaraco-functools==4.6.0
+ + jeepney==0.9.0
+ + jinja2==3.1.6
+ + jiter==0.16.0
+ + joserfc==1.7.3
+ + jsonref==1.1.0
+ + jsonschema==4.26.0
+ + jsonschema-path==0.5.0
+ + jsonschema-specifications==2025.9.1
+ + keyring==25.7.0
+ + ladybug==0.16.1
+ + litellm==1.87.5
+ + loguru==0.7.3
+ + marginalia==0.0.41 (from file:///tmp/tmp.zHAyZZRuFe/marginalia-0.0.41-py3-none-any.whl)
+ + markdown-it-py==4.2.0
+ + markupsafe==3.0.3
+ + mcp==1.28.1
+ + mdurl==0.1.2
+ + mmh3==5.2.1
+ + more-itertools==11.1.0
+ + multidict==6.7.1
+ + numpy==2.5.1
+ + onnxruntime==1.27.0
+ + openai==2.45.0
+ + openapi-pydantic==0.5.1
+ + opentelemetry-api==1.43.0
+ + packaging==26.2
+ + pathable==0.6.0
+ + pillow==12.3.0
+ + platformdirs==4.10.0
+ + propcache==0.5.2
+ + protobuf==7.35.1
+ + py-key-value-aio==0.4.5
+ + py-rust-stemmers==0.1.8
+ + pycparser==3.0
+ + pydantic==2.13.4
+ + pydantic-core==2.46.4
+ + pydantic-settings==2.14.2
+ + pygments==2.20.0
+ + pyjwt==2.13.0
+ + pyperclip==1.11.0
+ + python-dotenv==1.2.2
+ + python-multipart==0.0.32
+ + pyyaml==6.0.3
+ + referencing==0.37.0
+ + regex==2026.7.10
+ + requests==2.34.2
+ + rich==15.0.0
+ + rich-rst==2.1.0
+ + rpds-py==2026.6.3
+ + secretstorage==3.5.0
+ + sniffio==1.3.1
+ + sse-starlette==3.4.5
+ + starlette==1.3.1
+ + tiktoken==0.13.0
+ + tokenizers==0.23.1
+ + tqdm==4.68.4
+ + typing-extensions==4.16.0
+ + typing-inspection==0.4.2
+ + uncalled-for==0.3.2
+ + urllib3==2.7.0
+ + uvicorn==0.51.0
+ + watchfiles==1.2.0
+ + websockets==16.1
+ + yarl==1.24.2
+ + zipp==4.1.0
+    staged Marginalia 0.0.41; active installation is still untouched
+
+==> Existing Marginalia daemon detected — updating in place
+stopping marginalia server (pid=4298); waiting up to 30.0s for drain, then escalating automatically
+stopped marginalia server (pid=4298)
+    stopped the running daemon — it will restart on the new version below
+
+==> Activating staged Marginalia 0.0.41
+error: candidate activation failed
+ !! activation failed; restoring the previous Marginalia tool
+    restored and restarted Marginalia 0.0.41
+curl: (23) Failure writing output to destination
+Marginalia UI is ready at http://127.0.0.1:7777/; browser launch skipped
+RELEASE_LIFECYCLE_PREVIOUS_TOOL_SENTINEL_SHA256=492606abe5ae609d9281a0b2314451062adbe6a408e5db62cf2e38e48fca94b5
+RELEASE_LIFECYCLE_PREVIOUS_TOOL_SENTINEL_OK
+RELEASE_LIFECYCLE_ACTIVATION_ROLLBACK_OK
+stopping marginalia server (pid=4443); waiting up to 30.0s for drain, then escalating automatically
+stopped marginalia server (pid=4443)
+RELEASE_LIFECYCLE_FINAL_STOP_OK
+DOCKER_TMUX_RELEASE_LIFECYCLE_OK
+
+Pane is dead (status 0, Tue Jul 14 09:51:00 2026)

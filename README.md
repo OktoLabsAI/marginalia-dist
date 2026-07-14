@@ -8,9 +8,10 @@ The current public prerelease is `0.0.41`: source tag
 `aae59db84c2abd0e915ac4cb72c08e60209abe34`, wheel
 [`marginalia-0.0.41-py3-none-any.whl`](https://github.com/OktoLabsAI/marginalia-dist/releases/download/v0.0.41/marginalia-0.0.41-py3-none-any.whl),
 SHA-256 `6842a55fe5e1180c67e81035342ee8b300f5ff2ce2aafbe48129d709a76dbfa6`.
-Linux exact-SHA evidence will be added after its release rehearsal. The final real interactive
-Windows PowerShell 5.1 rehearsal remains the only deferred release check, so `0.0.41` stays a
-prerelease until that evidence exists.
+The exact Linux Docker+tmux lifecycle passed from public driver
+`93d23c4f2504f333bd2a89250afa84d1762f020b`; its retained status-0 evidence is recorded below.
+The real interactive Windows PowerShell 5.1 rehearsal is the only remaining release check, so
+`0.0.41` stays a prerelease until that evidence exists.
 
 ## Install On macOS Or Linux
 
@@ -217,6 +218,20 @@ the individual `RELEASE_LIFECYCLE_*_OK` markers identify every required phase.
 This profile is Linux-only and does not replace the separate real interactive
 Windows PowerShell rehearsal.
 
+### v0.0.41 Linux evidence
+
+The final v0.0.41 Linux rehearsal fetched the driver from exact public dist commit
+`93d23c4f2504f333bd2a89250afa84d1762f020b`, after all three jobs in
+[`distribution-gate` run 29333923002](https://github.com/OktoLabsAI/marginalia-dist/actions/runs/29333923002)
+passed on that SHA. Its retained transcript is
+[`evidence/v0.0.41/linux-docker-tmux-release-lifecycle.txt`](evidence/v0.0.41/linux-docker-tmux-release-lifecycle.txt),
+SHA-256 `ec2b9701e3ac3274a7f31e244ffeddc73537e7e434d59bda0d1c5e08d1ef5141`
+(53,651 bytes; 1,938 lines). It records the exact driver, installer, manifest, and immutable
+v0.0.40 predecessor URLs and SHA-256 values. Every lifecycle marker occurs exactly once, including
+the verified predecessor rollback and token-preserving application-scope migration, app-first
+zero-vault startup, stopped/running updates, refusal paths, activation rollback, and final stop.
+The final line records tmux pane status 0.
+
 ### Immutable historical v0.0.40 evidence
 
 The final v0.0.40 Linux rehearsal fetched the driver from exact public dist commit
@@ -234,9 +249,8 @@ The final line records tmux pane status 0.
 That transcript is retained as immutable evidence for the already-published
 v0.0.40 artifact. Its authenticated-browser wording describes that historical
 wheel and is not evidence for the successor's plain loopback UI or app-scoped
-multi-vault lifecycle. The successor requires a new exact-SHA Linux rehearsal
-and evidence record; the v0.0.40 tag, manifest history, wheel, and transcript
-must not be replaced.
+multi-vault lifecycle. The v0.0.41 evidence above independently proves the successor; the v0.0.40
+tag, manifest history, wheel, and transcript remain immutable historical records.
 
 The evidence, workflow, and this record must be committed together on `main`,
 and every `distribution-gate` job must pass on that exact evidence commit before
