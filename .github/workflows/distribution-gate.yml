@@ -76,9 +76,9 @@ jobs:
             RELEASE_LIFECYCLE_PREDECESSOR_MIGRATION_OK
           do
             grep -Fq "$marker" test-install.sh
-            test "$(grep -Fc "$marker" test-install.ps1)" -eq 1
           done
           test "$(grep -Fc 'RELEASE_LIFECYCLE_PREDECESSOR_RUNNING_OK' test-install.sh)" -eq 2
+          test "$(grep -Fc 'WINDOWS_RELEASE_LIFECYCLE_PREDECESSOR_STOPPED_UPDATE_OK' test-install.ps1)" -eq 1
           test "$(grep -Fc "sha256sum \"\$app_token_file\"" test-install.sh)" -eq 1
           test "$(grep -Fc "Get-FileHash -Algorithm SHA256 -LiteralPath \$appTokenFile" test-install.ps1)" -eq 1
           grep -Fq 'marginalia ui --no-open' test-install.sh
@@ -155,6 +155,7 @@ jobs:
           import hashlib
           import io
           import json
+          import os
           import re
           import urllib.error
           import urllib.request
@@ -190,6 +191,7 @@ jobs:
           operator_verified_source_commits = {
               "0.0.40": "302c56b23e29dfe1bbf79eeff5efc63c72b8d34f",
               "0.0.41": "aae59db84c2abd0e915ac4cb72c08e60209abe34",
+              "0.0.42": "a20ad01577ed93531102ed7aeea8a9ec44691110",
           }
           assert version in operator_verified_source_commits, (
               f"v{version} has no operator-verified private source tag pin"
@@ -226,10 +228,23 @@ jobs:
               "0.0.40": "19847892b7e129225011d21d6d1f2ce00f996458",
               "0.0.41": "92bebfac1347d60a84281e3ca4692565fd954ffe",
           }
-          assert version in operator_verified_dist_tag_commits, (
-              f"v{version} has no operator-verified public distribution tag pin"
+          expected_dist_tag_commit = operator_verified_dist_tag_commits.get(version)
+          current_evidence = Path(
+              f"evidence/v{version}/linux-docker-tmux-release-lifecycle.txt"
           )
-          assert tag_target["sha"] == operator_verified_dist_tag_commits[version], (
+          if expected_dist_tag_commit is None and current_evidence.is_file():
+              driver_commits = {
+                  line.removeprefix("DRIVER_COMMIT=")
+                  for line in current_evidence.read_text().splitlines()
+                  if line.startswith("DRIVER_COMMIT=")
+              }
+              assert len(driver_commits) == 1, (
+                  "current Linux evidence must name one exact atomic driver commit"
+              )
+              expected_dist_tag_commit = driver_commits.pop()
+          if expected_dist_tag_commit is None:
+              expected_dist_tag_commit = os.environ["GITHUB_SHA"]
+          assert tag_target["sha"] == expected_dist_tag_commit, (
               "the public distribution tag does not resolve to the atomic driver commit"
           )
 
@@ -331,12 +346,12 @@ jobs:
           assert "Authenticated Marginalia UI" not in powershell_test
           assert "Authorization: Bearer" not in shell_test
           assert "Authorization = \"Bearer" not in powershell_test
-          predecessor_markers = (
+          linux_predecessor_markers = (
               "RELEASE_LIFECYCLE_PREDECESSOR_RUNNING_OK",
               "RELEASE_LIFECYCLE_PREDECESSOR_ROLLBACK_OK",
               "RELEASE_LIFECYCLE_PREDECESSOR_MIGRATION_OK",
           )
-          linux_lifecycle_markers = predecessor_markers + (
+          linux_lifecycle_markers = linux_predecessor_markers + (
               "RELEASE_LIFECYCLE_APP_FIRST_OK",
               "RELEASE_LIFECYCLE_FRESH_INSTALL_OK",
               "RELEASE_LIFECYCLE_STATUS_UI_OK",
@@ -358,7 +373,8 @@ jobs:
               assert shell_test.count(marker) == expected_count, marker
           linux_marker_positions = [shell_test.index(marker) for marker in linux_lifecycle_markers]
           assert linux_marker_positions == sorted(linux_marker_positions)
-          windows_lifecycle_markers = predecessor_markers + (
+          windows_lifecycle_markers = (
+              "WINDOWS_RELEASE_LIFECYCLE_PREDECESSOR_STOPPED_UPDATE_OK",
               "WINDOWS_RELEASE_LIFECYCLE_APP_FIRST_OK",
               "RELEASE_LIFECYCLE_FRESH_INSTALL_OK",
               "RELEASE_LIFECYCLE_STATUS_UI_OK",
@@ -376,11 +392,12 @@ jobs:
               assert powershell_test.count(marker) == 1, marker
           marker_positions = [powershell_test.index(marker) for marker in windows_lifecycle_markers]
           assert marker_positions == sorted(marker_positions)
-          for tester in (shell_test, powershell_test):
-              assert "19847892b7e129225011d21d6d1f2ce00f996458" in tester
-              assert "619d45919b506757442b758a4898e865e5600c7da12d8c83677bb3080414c5d8" in tester
+          assert "19847892b7e129225011d21d6d1f2ce00f996458" in shell_test
+          assert "619d45919b506757442b758a4898e865e5600c7da12d8c83677bb3080414c5d8" in shell_test
           assert "55127f6a3ef35e7b0ae9bc0aeb506dc3c51b6695d9dfb759f73dd018b8870866" in shell_test
-          assert "6856a0bac3c424a06ce865e2adff1a28906c8e3cbe7ea9603cddae92b08fa29d" in powershell_test
+          assert "92bebfac1347d60a84281e3ca4692565fd954ffe" in powershell_test
+          assert "01e47fd5ffdf5f68abfd30834f6bc5ff7c448784bfa70bc175e44351ef8d62b2" in powershell_test
+          assert "6842a55fe5e1180c67e81035342ee8b300f5ff2ce2aafbe48129d709a76dbfa6" in powershell_test
           powershell_sentinel_create = powershell_test.index(
               '-Value "previous-tool-only:$Version"'
           )
@@ -971,9 +988,7 @@ jobs:
           }
           $previousMarkerIndex = -1
           foreach ($marker in @(
-            "RELEASE_LIFECYCLE_PREDECESSOR_RUNNING_OK",
-            "RELEASE_LIFECYCLE_PREDECESSOR_ROLLBACK_OK",
-            "RELEASE_LIFECYCLE_PREDECESSOR_MIGRATION_OK",
+            "WINDOWS_RELEASE_LIFECYCLE_PREDECESSOR_STOPPED_UPDATE_OK",
             "WINDOWS_RELEASE_LIFECYCLE_APP_FIRST_OK",
             "RELEASE_LIFECYCLE_FRESH_INSTALL_OK",
             "RELEASE_LIFECYCLE_STATUS_UI_OK",
@@ -997,14 +1012,17 @@ jobs:
             $previousMarkerIndex = $matches[0].Index
           }
           foreach ($required in @(
-            '19847892b7e129225011d21d6d1f2ce00f996458',
-            '6856a0bac3c424a06ce865e2adff1a28906c8e3cbe7ea9603cddae92b08fa29d',
-            '619d45919b506757442b758a4898e865e5600c7da12d8c83677bb3080414c5d8',
-            'Invoke-PredecessorMigration $InstallUrl $ExpectedVersion $ManifestUrl $TestHome',
-            'PREDECESSOR_BOOTSTRAP_MODE=verified-ps51-quote-compat-copy',
-            'PREDECESSOR_COMPAT_INSTALL_SHA256=',
-            '$legacyVersionProbe = ''version("marginalia")''',
-            'Invoke-RawInstallerProcess $predecessorCompatInstaller $predecessorOutput',
+            '92bebfac1347d60a84281e3ca4692565fd954ffe',
+            '01e47fd5ffdf5f68abfd30834f6bc5ff7c448784bfa70bc175e44351ef8d62b2',
+            '6842a55fe5e1180c67e81035342ee8b300f5ff2ce2aafbe48129d709a76dbfa6',
+            'Invoke-StoppedPredecessorUpdate $InstallUrl $ExpectedVersion $ManifestUrl $TestHome',
+            'PREDECESSOR_BOOTSTRAP_MODE=successor-installer-with-immutable-stopped-v0.0.41-wheel',
+            'WINDOWS_RELEASE_LIFECYCLE_PREDECESSOR_STOPPED_UPDATE_OK',
+            '$predecessorHome = Join-Path $HomePath "stopped-predecessor"',
+            '$env:MARGINALIA_DEFAULT_WHEEL_URL = $predecessorWheelUrl',
+            '$env:MARGINALIA_DEFAULT_WHEEL_URL = $successorWheelUrl',
+            'Invoke-RawInstallerProcess $Url $predecessorOutput',
+            'Invoke-RawInstallerProcess $Url $successorOutput',
             'Get-Content -Raw -LiteralPath $source | Invoke-Expression',
             '.release-lifecycle-previous-tool-sentinel',
             'RELEASE_LIFECYCLE_PREVIOUS_TOOL_SENTINEL_SHA256=',
@@ -1054,160 +1072,6 @@ jobs:
             throw "Windows native Python argument probe failed"
           }
           if ($failed) { throw "PowerShell syntax validation failed" }
-
-      - name: Verify predecessor pre-status cleanup
-        shell: powershell
-        run: |
-          $tester = Get-Content -Raw -LiteralPath "test-install.ps1"
-          $childMatch = [regex]::Match(
-            $tester,
-            '(?s)\$child = @''\r?\n(?<child>.*?)\r?\n''@'
-          )
-          if (-not $childMatch.Success) {
-            throw "test-install.ps1 child runner here-string was not found"
-          }
-          $childTokens = $null
-          $childErrors = $null
-          $childAst = [System.Management.Automation.Language.Parser]::ParseInput(
-            $childMatch.Groups["child"].Value,
-            [ref]$childTokens,
-            [ref]$childErrors
-          )
-          if ($childErrors.Count -gt 0) {
-            throw "generated Windows child runner did not parse"
-          }
-          foreach ($functionName in @(
-            "Test-ChildProcessAlive",
-            "Test-ChildTcpPort",
-            "Read-ChildServerProcessId",
-            "Invoke-PredecessorMigration"
-          )) {
-            $functionAst = $childAst.Find(
-              {
-                param($node)
-                $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
-                  $node.Name -eq $functionName
-              },
-              $true
-            )
-            if ($null -eq $functionAst) { throw "$functionName is missing" }
-            . ([scriptblock]::Create($functionAst.Extent.Text))
-          }
-
-          function Invoke-WebRequest {
-            param(
-              [switch]$UseBasicParsing,
-              [string]$Uri,
-              [string]$OutFile
-            )
-            $content = if ((Split-Path -Leaf $OutFile) -eq "predecessor-install.ps1") {
-              @(
-                'version("marginalia")',
-                'version("marginalia")',
-                'version("marginalia")'
-              )
-            } else {
-              $Uri
-            }
-            Set-Content -LiteralPath $OutFile -Value $content -Encoding ASCII
-          }
-          function Get-FileHash {
-            param(
-              [string]$Algorithm,
-              [string]$LiteralPath
-            )
-            $hash = if ((Split-Path -Leaf $LiteralPath) -eq "predecessor-install.ps1") {
-              "6856a0bac3c424a06ce865e2adff1a28906c8e3cbe7ea9603cddae92b08fa29d"
-            } else {
-              "619d45919b506757442b758a4898e865e5600c7da12d8c83677bb3080414c5d8"
-            }
-            return [pscustomobject]@{ Hash = $hash }
-          }
-          function Invoke-RawInstallerProcess {
-            param([string]$Url, [string]$OutputPath)
-            $legacyRoot = Join-Path $env:HOME ".marginalia\vaults\legacy-vault\.marginalia"
-            $appRoot = Join-Path $env:HOME ".marginalia\runtime\.marginalia"
-            $toolBin = Join-Path $env:HOME ".uv\bin"
-            New-Item -ItemType Directory -Force -Path $legacyRoot, $appRoot, $toolBin | Out-Null
-            $daemon = Join-Path $env:HOME "predecessor-owned.exe"
-            Copy-Item -LiteralPath (Join-Path $env:SystemRoot "System32\PING.EXE") -Destination $daemon
-            $owned = Start-Process -FilePath $daemon -ArgumentList @("-t", "127.0.0.1") `
-              -WindowStyle Hidden -PassThru
-            $script:PredecessorOwnedProcessId = $owned.Id
-            Set-Content -LiteralPath (Join-Path $env:HOME "predecessor-owned.pid") `
-              -Value ([string]$owned.Id) -Encoding ASCII
-            $ownedRecord = @{
-              version = 1
-              pid = $owned.Id
-              start_token = "owned"
-              owner_id = "0123456789abcdef0123456789abcdef"
-            } | ConvertTo-Json -Compress
-            $unownedRecord = @{
-              version = 1
-              pid = $script:UnrelatedProcessId
-              start_token = "unowned"
-              owner_id = "fedcba9876543210fedcba9876543210"
-            } | ConvertTo-Json -Compress
-            Set-Content -LiteralPath (Join-Path $legacyRoot "server.pid") `
-              -Value $ownedRecord -Encoding ASCII
-            Set-Content -LiteralPath (Join-Path $appRoot "server.pid") `
-              -Value $unownedRecord -Encoding ASCII
-            @(
-              '@echo off',
-              'echo %*>> "%HOME%\predecessor-cleanup.calls"',
-              'for /f "usebackq delims=" %%p in ("%HOME%\predecessor-owned.pid") do taskkill /PID %%p /F >nul 2>&1',
-              'exit /b 0'
-            ) | Set-Content -LiteralPath (Join-Path $toolBin "marginalia.cmd") -Encoding ASCII
-            return 0
-          }
-
-          $testRoot = Join-Path $env:RUNNER_TEMP "marginalia-predecessor-prestatus"
-          $originalHome = [Environment]::GetEnvironmentVariable("HOME", "Process")
-          $unrelated = Start-Process -FilePath (Join-Path $PSHOME "powershell.exe") `
-            -ArgumentList @("-NoProfile", "-Command", "Start-Sleep -Seconds 300") `
-            -WindowStyle Hidden -PassThru
-          $script:UnrelatedProcessId = $unrelated.Id
-          $script:PredecessorOwnedProcessId = 0
-          try {
-            $failure = ""
-            try {
-              Invoke-PredecessorMigration `
-                "https://invalid.example/successor.ps1" `
-                "0.0.test" `
-                "https://invalid.example/manifest.json" `
-                $testRoot `
-                -FailAfterInstallBeforeStatus
-            } catch {
-              $failure = $_.Exception.Message
-            }
-            if ($failure -ne "forced predecessor failure before status") {
-              throw "pre-status failure injection was not observed: $failure"
-            }
-            if ($script:PredecessorOwnedProcessId -le 0 -or
-                (Test-ChildProcessAlive $script:PredecessorOwnedProcessId)) {
-              throw "predecessor-owned daemon survived pre-status failure cleanup"
-            }
-            if (-not (Test-ChildProcessAlive $script:UnrelatedProcessId)) {
-              throw "pre-status cleanup terminated an unrelated process"
-            }
-            $migrationHome = Join-Path $testRoot "predecessor-migration"
-            $calls = @(Get-Content -LiteralPath (Join-Path $migrationHome "predecessor-cleanup.calls"))
-            if ($calls.Count -ne 1 -or
-                $calls[0] -notmatch '^stop --vault .+ --timeout 30$') {
-              throw "pre-status cleanup did not limit CLI shutdown to the owned predecessor: $calls"
-            }
-            if ([Environment]::GetEnvironmentVariable("HOME", "Process") -ne $originalHome) {
-              throw "pre-status cleanup did not restore the caller environment"
-            }
-            Write-Host "WINDOWS_PREDECESSOR_PRE_STATUS_CLEANUP_OK owned=$($script:PredecessorOwnedProcessId) unrelated=$($script:UnrelatedProcessId)"
-          } finally {
-            foreach ($processId in @($script:PredecessorOwnedProcessId, $script:UnrelatedProcessId)) {
-              if ($processId -gt 0) {
-                Stop-Process -Id $processId -Force -ErrorAction SilentlyContinue
-              }
-            }
-            Remove-Item -LiteralPath $testRoot -Recurse -Force -ErrorAction SilentlyContinue
-          }
 
       - name: Verify Claude MCP registration parsing
         shell: powershell

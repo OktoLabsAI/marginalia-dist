@@ -4,22 +4,16 @@ One-shot installer for [Marginalia](https://github.com/OktoLabsAI/marginalia), a
 local-first knowledge graph you can drive from Claude Code (MCP), the CLI, or as
 a Python library.
 
-The current public prerelease is the immutable `0.0.41`: source tag
-`aae59db84c2abd0e915ac4cb72c08e60209abe34`, wheel
-[`marginalia-0.0.41-py3-none-any.whl`](https://github.com/OktoLabsAI/marginalia-dist/releases/download/v0.0.41/marginalia-0.0.41-py3-none-any.whl),
-SHA-256 `6842a55fe5e1180c67e81035342ee8b300f5ff2ce2aafbe48129d709a76dbfa6`.
-The exact Linux Docker+tmux lifecycle passed from public driver
-`93d23c4f2504f333bd2a89250afa84d1762f020b`; its retained status-0 evidence is recorded below.
-The real interactive Windows PowerShell 5.1 rehearsal then exposed three daemon-ownership defects
-in the current wheel: Windows does not provide `os.fchmod`; its lifecycle lock covers a PID payload
-byte that status and stop must read; and its venv launcher PID can differ from the runtime PID that
-owns that lock. `0.0.41` is therefore permanently non-promotable, not a candidate waiting on one
-final gate. No successful Windows release-lifecycle evidence exists for it. Its tag and wheel remain
-immutable records; the fix requires a new source version and a complete rerun of the source,
-artifact, distribution, Linux, and Windows release gates for that new version.
-An unversioned source-candidate wheel has passed native Windows install plus daemon
-start/status/stop, but that diagnostic smoke is not release evidence. Explicit authorization of a
-new successor version is the sole current release blocker.
+The current public prerelease is `0.0.42`: source tag
+`a20ad01577ed93531102ed7aeea8a9ec44691110`, wheel
+[`marginalia-0.0.42-py3-none-any.whl`](https://github.com/OktoLabsAI/marginalia-dist/releases/download/v0.0.42/marginalia-0.0.42-py3-none-any.whl),
+SHA-256 `238bcf05646e5948475fe4a6d02be141480ca344d7ee080b39ca7352a382399d`
+(785,387 bytes; 139 wheel members). All six source jobs passed on the exact tagged merge SHA.
+This corrective release fixes the native Windows daemon ownership failures found in immutable
+`0.0.41`, restores app-first browser launch and application-scoped multi-vault management, and
+allows explicitly approved keyless private-LAN model endpoints. It remains a prerelease until the
+exact public distribution, Linux Docker+tmux, and real interactive Windows PowerShell 5.1 gates
+are retained and green. The `0.0.41` tag and wheel remain immutable historical records.
 
 ## Install On macOS Or Linux
 
@@ -29,16 +23,14 @@ curl -fsSL https://raw.githubusercontent.com/OktoLabsAI/marginalia-dist/main/ins
 
 ## Install On Windows
 
-**Known blocker:** the immutable `0.0.41` wheel cannot complete its Windows daemon lifecycle. Do
-not treat this command as a release-qualified Windows path until an authorized successor passes the
-native PowerShell lifecycle.
+The installer currently resolves the `0.0.42` corrective prerelease. Stable promotion waits for
+the retained native PowerShell lifecycle evidence described below.
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/OktoLabsAI/marginalia-dist/main/install.ps1 | iex"
 ```
 
-On macOS/Linux today, and on Windows only after a release-qualified successor, the installer takes
-a fresh machine from zero to a running application wired into Claude Code:
+The installer takes a fresh machine from zero to a running application wired into Claude Code:
 
 1. installs [`uv`](https://docs.astral.sh/uv/) if missing and pins Python 3.12 (uv-managed — your system Python is untouched);
 2. downloads the released Marginalia wheel and installs the `marginalia` + `kg` commands;
@@ -296,17 +288,12 @@ byte-compares itself with the exact public raw commit and pins `install.ps1`
 and `release-manifest.json` to that same SHA. The profile requires the real
 Windows PowerShell 5.1 host and records `INPUT_REDIRECTED=False`; it does not
 prompt because the default installation is app-first. A promotable candidate must end with
-`WINDOWS_RELEASE_LIFECYCLE_OK`; no v0.0.41 rehearsal produced that successful release evidence.
-The profile SHA-verifies the immutable v0.0.40
-installer and manifest. Because that historical installer cannot preserve the quotes
-in its three native Python version probes under PowerShell 5.1, the driver creates a
-deterministic local compatibility copy changing only those probes, records
-`PREDECESSOR_BOOTSTRAP_MODE=verified-ps51-quote-compat-copy` and its SHA-256. The native run then
-reached the exact v0.0.40 wheel and failed on its missing `os.fchmod` before a running-predecessor
-phase could complete. Current driver corrections are diagnostic history only: they do not prove a
-successful predecessor lifecycle, repair `0.0.41`, or provide Windows release evidence. A future
-authorized successor must exercise the complete lifecycle against its exact new wheel and exact
-green public driver; it must not claim a Windows predecessor-running phase that never completed.
+`WINDOWS_RELEASE_LIFECYCLE_OK`. The `0.0.42` profile first uses the pinned successor installer to
+materialize the immutable `0.0.41` wheel with serving disabled, verifies its exact CLI identity
+with no PID records or open daemon ports, and performs one stopped update to the exact `0.0.42`
+wheel. It requires the CLI to change while the daemon remains stopped, then runs the complete
+fresh, running, refusal, rollback, and final-stop lifecycle. This honest stopped-predecessor check
+replaces the impossible claim that a healthy `0.0.41` Windows daemon could be rehearsed.
 Retain the sandbox; do not add `-Cleanup` to an evidence run.
 Publish only the deterministic `*.public.log` sanitized evidence. The `*.private.raw.log`
 PowerShell transcript can contain Windows user/machine metadata and must remain private. The tester

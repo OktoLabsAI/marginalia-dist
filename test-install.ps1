@@ -8,7 +8,7 @@ param(
     [string]$InstallUrl = $(if ($env:MARGINALIA_INSTALL_URL) { $env:MARGINALIA_INSTALL_URL } else { "https://raw.githubusercontent.com/OktoLabsAI/marginalia-dist/main/install.ps1" }),
     [string]$TestHome = $(if ($env:MARGINALIA_TEST_HOME) { $env:MARGINALIA_TEST_HOME } else { Join-Path ([IO.Path]::GetTempPath()) ("marginalia-install-test-" + [guid]::NewGuid().ToString("N").Substring(0, 12)) }),
     [string]$Vault = $(if ($env:MARGINALIA_VAULT) { $env:MARGINALIA_VAULT } else { "mynotes" }),
-    [string]$ExpectedVersion = $(if ($env:MARGINALIA_EXPECTED_VERSION) { $env:MARGINALIA_EXPECTED_VERSION } else { "0.0.41" }),
+    [string]$ExpectedVersion = $(if ($env:MARGINALIA_EXPECTED_VERSION) { $env:MARGINALIA_EXPECTED_VERSION } else { "0.0.42" }),
     [ValidateSet("interactive", "skip", "custom", "release-lifecycle")]
     [string]$Profile = "interactive",
     [string]$ApiBase = "",
@@ -612,40 +612,33 @@ function Assert-CanonicalTestPidRecord(
     return $validationText
 }
 
-function Invoke-PredecessorMigration(
+function Invoke-StoppedPredecessorUpdate(
     [string]$Url,
     [string]$Version,
     [string]$SuccessorManifestUrl,
-    [string]$HomePath,
-    [switch]$FailAfterInstallBeforeStatus
+    [string]$HomePath
 ) {
-    $predecessorCommit = "19847892b7e129225011d21d6d1f2ce00f996458"
-    $predecessorInstallUrl = "https://raw.githubusercontent.com/OktoLabsAI/marginalia-dist/$predecessorCommit/install.ps1"
-    $predecessorManifestUrl = "https://raw.githubusercontent.com/OktoLabsAI/marginalia-dist/$predecessorCommit/release-manifest.json"
-    $predecessorInstallSha = "6856a0bac3c424a06ce865e2adff1a28906c8e3cbe7ea9603cddae92b08fa29d"
-    $predecessorManifestSha = "619d45919b506757442b758a4898e865e5600c7da12d8c83677bb3080414c5d8"
-    $migrationHome = Join-Path $HomePath "predecessor-migration"
-    $migrationToolBin = Join-Path $migrationHome ".uv\bin"
-    $legacyVault = Join-Path (Join-Path (Join-Path $migrationHome ".marginalia") "vaults") "legacy-vault"
-    $legacyPidFile = Join-Path $legacyVault ".marginalia\server.pid"
-    $appPidFile = Join-Path (Join-Path (Join-Path $migrationHome ".marginalia") "runtime") ".marginalia\server.pid"
-    $legacyTokenFile = Join-Path $legacyVault ".marginalia\daemon.token"
-    $predecessorInstaller = Join-Path $migrationHome "predecessor-install.ps1"
-    $predecessorCompatInstaller = Join-Path $migrationHome "predecessor-install.ps51-compat.ps1"
-    $predecessorManifest = Join-Path $migrationHome "predecessor-manifest.json"
-    $trackedProcessIds = @()
-    $legacyCli = $null
+    $predecessorDistCommit = "92bebfac1347d60a84281e3ca4692565fd954ffe"
+    $predecessorManifestUrl = "https://raw.githubusercontent.com/OktoLabsAI/marginalia-dist/$predecessorDistCommit/release-manifest.json"
+    $predecessorManifestSha = "01e47fd5ffdf5f68abfd30834f6bc5ff7c448784bfa70bc175e44351ef8d62b2"
+    $predecessorWheelUrl = "https://github.com/OktoLabsAI/marginalia-dist/releases/download/v0.0.41/marginalia-0.0.41-py3-none-any.whl"
+    $predecessorWheelSha = "6842a55fe5e1180c67e81035342ee8b300f5ff2ce2aafbe48129d709a76dbfa6"
+    $successorWheelUrl = "https://github.com/OktoLabsAI/marginalia-dist/releases/download/v$Version/marginalia-$Version-py3-none-any.whl"
+    $predecessorHome = Join-Path $HomePath "stopped-predecessor"
+    $predecessorToolBin = Join-Path $predecessorHome ".uv\bin"
+    $pidRoot = Join-Path $predecessorHome ".marginalia"
+    $predecessorManifest = Join-Path $predecessorHome "predecessor-v0041-manifest.json"
+    $predecessorOutput = Join-Path $predecessorHome "predecessor-v0041-install.out"
+    $successorOutput = Join-Path $predecessorHome "successor-v0042-stopped-update.out"
+    $predecessorCli = $null
     $environmentNames = @(
         "HOME", "USERPROFILE", "APPDATA", "LOCALAPPDATA", "TEMP", "TMP", "PATH",
         "XDG_DATA_HOME", "XDG_CACHE_HOME", "XDG_CONFIG_HOME", "XDG_BIN_HOME",
         "UV_TOOL_DIR", "UV_TOOL_BIN_DIR", "UV_INSTALL_DIR", "UV_PYTHON_INSTALL_DIR",
         "UV_PYTHON_BIN_DIR", "UV_PYTHON_CACHE_DIR", "UV_CACHE_DIR",
-        "UV_NO_MODIFY_PATH", "UV_PYTHON_NO_REGISTRY", "UV_PYTHON_INSTALL_REGISTRY",
-        "MARGINALIA_NO_MCP", "MARGINALIA_NO_OPEN", "MARGINALIA_NO_UPDATE_SHELL",
-        "MARGINALIA_VAULT", "MARGINALIA_ONBOARD_NONINTERACTIVE",
-        "MARGINALIA_LLM_PROVIDER", "MARGINALIA_EXPECTED_VERSION", "MARGINALIA_MANIFEST",
-        "MARGINALIA_DEFAULT_MANIFEST_URL", "MARGINALIA_TEST_FAIL_ACTIVATION",
-        "MARGINALIA_REAL_UV", "MARGINALIA_TEST_INSTALL_URL"
+        "MARGINALIA_EXPECTED_VERSION", "MARGINALIA_MANIFEST",
+        "MARGINALIA_DEFAULT_MANIFEST_URL", "MARGINALIA_DEFAULT_WHEEL_URL",
+        "MARGINALIA_NO_SERVE"
     )
     $savedEnvironment = @{}
     foreach ($name in $environmentNames) {
@@ -653,303 +646,174 @@ function Invoke-PredecessorMigration(
     }
 
     try {
-        if (Test-Path -LiteralPath $migrationHome) {
-            Remove-Item -LiteralPath $migrationHome -Recurse -Force
-        }
         New-Item -ItemType Directory -Force -Path `
-            $migrationHome, `
-            (Join-Path $migrationHome "AppData\Roaming"), `
-            (Join-Path $migrationHome "AppData\Local"), `
-            (Join-Path $migrationHome ".cache"), `
-            (Join-Path $migrationHome ".config"), `
-            (Join-Path $migrationHome ".local\share"), `
-            (Join-Path $migrationHome ".uv\tools"), `
-            (Join-Path $migrationHome ".uv\bin"), `
-            (Join-Path $migrationHome ".uv\python"), `
-            (Join-Path $migrationHome ".uv\python-bin"), `
-            (Join-Path $migrationHome ".uv\python-cache"), `
-            (Join-Path $migrationHome ".uv\cache"), `
-            (Join-Path $migrationHome "tmp") | Out-Null
+            $predecessorHome, `
+            (Join-Path $predecessorHome "AppData\Roaming"), `
+            (Join-Path $predecessorHome "AppData\Local"), `
+            (Join-Path $predecessorHome ".cache"), `
+            (Join-Path $predecessorHome ".config"), `
+            (Join-Path $predecessorHome ".local\share"), `
+            (Join-Path $predecessorHome ".local\bin"), `
+            (Join-Path $predecessorHome ".uv\tools"), `
+            $predecessorToolBin, `
+            (Join-Path $predecessorHome ".uv\python"), `
+            (Join-Path $predecessorHome ".uv\python-bin"), `
+            (Join-Path $predecessorHome ".uv\python-cache"), `
+            (Join-Path $predecessorHome ".uv\cache"), `
+            (Join-Path $predecessorHome "tmp") | Out-Null
 
-        $env:HOME = $migrationHome
-        $env:USERPROFILE = $migrationHome
-        $env:APPDATA = Join-Path $migrationHome "AppData\Roaming"
-        $env:LOCALAPPDATA = Join-Path $migrationHome "AppData\Local"
-        $env:TEMP = Join-Path $migrationHome "tmp"
-        $env:TMP = Join-Path $migrationHome "tmp"
-        $env:XDG_DATA_HOME = Join-Path $migrationHome ".local\share"
-        $env:XDG_CACHE_HOME = Join-Path $migrationHome ".cache"
-        $env:XDG_CONFIG_HOME = Join-Path $migrationHome ".config"
-        $env:XDG_BIN_HOME = Join-Path $migrationHome ".local\bin"
-        $env:UV_TOOL_DIR = Join-Path $migrationHome ".uv\tools"
-        $env:UV_TOOL_BIN_DIR = $migrationToolBin
-        $env:UV_INSTALL_DIR = $migrationToolBin
-        $env:UV_PYTHON_INSTALL_DIR = Join-Path $migrationHome ".uv\python"
-        $env:UV_PYTHON_BIN_DIR = Join-Path $migrationHome ".uv\python-bin"
-        $env:UV_PYTHON_CACHE_DIR = Join-Path $migrationHome ".uv\python-cache"
-        $env:UV_CACHE_DIR = Join-Path $migrationHome ".uv\cache"
-        $env:UV_NO_MODIFY_PATH = "1"
-        $env:UV_PYTHON_NO_REGISTRY = "1"
-        $env:UV_PYTHON_INSTALL_REGISTRY = "0"
-        $env:Path = "$migrationToolBin;$($savedEnvironment['PATH'])"
-        $env:MARGINALIA_NO_MCP = "1"
-        $env:MARGINALIA_NO_OPEN = "1"
-        $env:MARGINALIA_NO_UPDATE_SHELL = "1"
-        $env:MARGINALIA_VAULT = "legacy-vault"
-        $env:MARGINALIA_ONBOARD_NONINTERACTIVE = "1"
-        $env:MARGINALIA_LLM_PROVIDER = "skip"
-        $env:MARGINALIA_EXPECTED_VERSION = "0.0.40"
-        $env:MARGINALIA_MANIFEST = $predecessorManifestUrl
-        $env:MARGINALIA_DEFAULT_MANIFEST_URL = $predecessorManifestUrl
-        Remove-Item Env:MARGINALIA_TEST_FAIL_ACTIVATION -ErrorAction SilentlyContinue
-        Remove-Item Env:MARGINALIA_REAL_UV -ErrorAction SilentlyContinue
+        $env:HOME = $predecessorHome
+        $env:USERPROFILE = $predecessorHome
+        $env:APPDATA = Join-Path $predecessorHome "AppData\Roaming"
+        $env:LOCALAPPDATA = Join-Path $predecessorHome "AppData\Local"
+        $env:TEMP = Join-Path $predecessorHome "tmp"
+        $env:TMP = Join-Path $predecessorHome "tmp"
+        $env:XDG_DATA_HOME = Join-Path $predecessorHome ".local\share"
+        $env:XDG_CACHE_HOME = Join-Path $predecessorHome ".cache"
+        $env:XDG_CONFIG_HOME = Join-Path $predecessorHome ".config"
+        $env:XDG_BIN_HOME = Join-Path $predecessorHome ".local\bin"
+        $env:UV_TOOL_DIR = Join-Path $predecessorHome ".uv\tools"
+        $env:UV_TOOL_BIN_DIR = $predecessorToolBin
+        $env:UV_INSTALL_DIR = $predecessorToolBin
+        $env:UV_PYTHON_INSTALL_DIR = Join-Path $predecessorHome ".uv\python"
+        $env:UV_PYTHON_BIN_DIR = Join-Path $predecessorHome ".uv\python-bin"
+        $env:UV_PYTHON_CACHE_DIR = Join-Path $predecessorHome ".uv\python-cache"
+        $env:UV_CACHE_DIR = Join-Path $predecessorHome ".uv\cache"
+        $env:Path = "$predecessorToolBin;$($savedEnvironment['PATH'])"
 
-        Invoke-WebRequest -UseBasicParsing -Uri $predecessorInstallUrl -OutFile $predecessorInstaller
         Invoke-WebRequest -UseBasicParsing -Uri $predecessorManifestUrl -OutFile $predecessorManifest
-        if ((Get-FileHash -Algorithm SHA256 -LiteralPath $predecessorInstaller).Hash.ToLowerInvariant() -ne $predecessorInstallSha) {
-            throw "immutable predecessor installer SHA-256 mismatch"
+        $actualManifestSha = (
+            Get-FileHash -Algorithm SHA256 -LiteralPath $predecessorManifest
+        ).Hash.ToLowerInvariant()
+        if ($actualManifestSha -ne $predecessorManifestSha) {
+            throw "immutable v0.0.41 manifest SHA-256 mismatch"
         }
-        if ((Get-FileHash -Algorithm SHA256 -LiteralPath $predecessorManifest).Hash.ToLowerInvariant() -ne $predecessorManifestSha) {
-            throw "immutable predecessor manifest SHA-256 mismatch"
+        $manifest = Get-Content -Raw -LiteralPath $predecessorManifest | ConvertFrom-Json
+        if ([string]$manifest.version -ne "0.0.41" -or
+            [string]$manifest.sha256 -ne $predecessorWheelSha) {
+            throw "immutable v0.0.41 manifest identity mismatch"
         }
-        Write-Host "PREDECESSOR_COMMIT=$predecessorCommit"
-        Write-Host "PREDECESSOR_INSTALL_URL=$predecessorInstallUrl"
-        Write-Host "PREDECESSOR_INSTALL_SHA256=$predecessorInstallSha"
+
+        Write-Host "PREDECESSOR_DIST_COMMIT=$predecessorDistCommit"
         Write-Host "PREDECESSOR_MANIFEST_URL=$predecessorManifestUrl"
         Write-Host "PREDECESSOR_MANIFEST_SHA256=$predecessorManifestSha"
-        $predecessorSource = [IO.File]::ReadAllText($predecessorInstaller)
-        $legacyVersionProbe = 'version("marginalia")'
-        $compatVersionProbe = "version(''marginalia'')"
-        if ([regex]::Matches(
-                $predecessorSource,
-                [regex]::Escape($legacyVersionProbe)
-            ).Count -ne 3) {
-            throw "immutable predecessor installer version-probe contract changed"
-        }
-        $predecessorCompatSource = $predecessorSource.Replace(
-            $legacyVersionProbe,
-            $compatVersionProbe
-        )
-        [IO.File]::WriteAllText(
-            $predecessorCompatInstaller,
-            $predecessorCompatSource,
-            [Text.UTF8Encoding]::new($false)
-        )
-        $predecessorCompatSha = (
-            Get-FileHash -Algorithm SHA256 -LiteralPath $predecessorCompatInstaller
-        ).Hash.ToLowerInvariant()
-        Write-Host "PREDECESSOR_BOOTSTRAP_MODE=verified-ps51-quote-compat-copy"
-        Write-Host "PREDECESSOR_COMPAT_INSTALL_SHA256=$predecessorCompatSha"
+        Write-Host "PREDECESSOR_WHEEL_SHA256=$predecessorWheelSha"
+        Write-Host "PREDECESSOR_BOOTSTRAP_MODE=successor-installer-with-immutable-stopped-v0.0.41-wheel"
 
-        $predecessorOutput = Join-Path $migrationHome "predecessor-install.out"
-        if ((Invoke-RawInstallerProcess $predecessorCompatInstaller $predecessorOutput) -ne 0) {
-            throw "immutable predecessor compatibility installation failed"
+        $env:MARGINALIA_EXPECTED_VERSION = "0.0.41"
+        $env:MARGINALIA_MANIFEST = $predecessorManifestUrl
+        $env:MARGINALIA_DEFAULT_MANIFEST_URL = $predecessorManifestUrl
+        $env:MARGINALIA_DEFAULT_WHEEL_URL = $predecessorWheelUrl
+        $env:MARGINALIA_NO_SERVE = "1"
+        if ((Invoke-RawInstallerProcess $Url $predecessorOutput) -ne 0) {
+            throw "stopped v0.0.41 predecessor installation failed"
         }
-        if ($FailAfterInstallBeforeStatus) {
-            throw "forced predecessor failure before status"
-        }
+
         foreach ($name in @("marginalia.exe", "marginalia.cmd", "marginalia")) {
-            $candidate = Join-Path $migrationToolBin $name
-            if (Test-Path -LiteralPath $candidate) { $legacyCli = $candidate; break }
+            $candidate = Join-Path $predecessorToolBin $name
+            if (Test-Path -LiteralPath $candidate) {
+                $predecessorCli = $candidate
+                break
+            }
         }
-        if (-not $legacyCli) { throw "immutable predecessor CLI was not installed" }
-        $legacyStatus = $null
-        for ($i = 0; $i -lt 90; $i++) {
-            try {
-                $rawStatus = (& $legacyCli status --vault $legacyVault --json --timeout 5 2>$null | Out-String)
-                if ($LASTEXITCODE -eq 0 -and $rawStatus) {
-                    $candidateStatus = ConvertFrom-Json $rawStatus
-                    if ([string]$candidateStatus.marginalia_version -eq "0.0.40") {
-                        $legacyStatus = $candidateStatus
-                        break
-                    }
-                }
-            } catch {}
-            Start-Sleep -Seconds 1
+        if (-not $predecessorCli) {
+            throw "stopped v0.0.41 predecessor CLI was not installed"
         }
-        if ($null -eq $legacyStatus) { throw "immutable predecessor daemon did not become ready" }
-        $oldProcessId = [int]$legacyStatus.pid
-        $trackedProcessIds += $oldProcessId
-        if ($oldProcessId -le 0 -or -not (Test-ChildProcessAlive $oldProcessId)) {
-            throw "immutable predecessor status did not identify a live process"
+        $predecessorVersion = ([string](
+            & $predecessorCli --version | Select-Object -First 1
+        )).Trim()
+        if ($predecessorVersion -ne "marginalia 0.0.41") {
+            throw "predecessor CLI version '$predecessorVersion' does not match 0.0.41"
         }
-        if (-not (Test-Path -LiteralPath $legacyPidFile -PathType Leaf)) {
-            throw "immutable predecessor did not create its vault-scoped PID file"
+
+        $pidRecords = @()
+        if (Test-Path -LiteralPath $pidRoot) {
+            $pidRecords = @(Get-ChildItem -LiteralPath $pidRoot -Filter "server.pid" -Recurse -File)
         }
-        if (-not (Test-Path -LiteralPath $legacyTokenFile -PathType Leaf)) {
-            throw "immutable predecessor did not create its vault-scoped token"
+        if ($pidRecords.Count -ne 0 -or
+            (Test-ChildTcpPort 7777) -or
+            (Test-ChildTcpPort 8201)) {
+            throw "v0.0.41 predecessor was not stopped before update"
         }
-        $legacyTokenHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $legacyTokenFile).Hash.ToLowerInvariant()
-        $realUv = (Get-Command uv -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
-        $toolRoot = ([string](& $realUv tool dir | Select-Object -First 1)).Trim()
-        $sentinel = Join-Path (Join-Path $toolRoot "marginalia") ".predecessor-v0040-sentinel"
-        Set-Content -LiteralPath $sentinel -Value "immutable-predecessor:0.0.40" -Encoding ASCII
-        $sentinelHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $sentinel).Hash.ToLowerInvariant()
-        Write-Host "RELEASE_LIFECYCLE_PREDECESSOR_RUNNING_OK"
 
         $env:MARGINALIA_EXPECTED_VERSION = $Version
         $env:MARGINALIA_MANIFEST = $SuccessorManifestUrl
         $env:MARGINALIA_DEFAULT_MANIFEST_URL = $SuccessorManifestUrl
-        $shimRoot = Join-Path $migrationHome "activation-failure-shim"
-        New-Item -ItemType Directory -Force -Path $shimRoot | Out-Null
-        @(
-            '@echo off',
-            'if "%MARGINALIA_TEST_FAIL_ACTIVATION%"=="1" if /I "%~1"=="tool" if /I "%~2"=="install" exit /b 77',
-            '"%MARGINALIA_REAL_UV%" %*',
-            'exit /b %ERRORLEVEL%'
-        ) | Set-Content -LiteralPath (Join-Path $shimRoot "uv.cmd") -Encoding ASCII
-        $env:MARGINALIA_REAL_UV = $realUv
-        $env:MARGINALIA_TEST_FAIL_ACTIVATION = "1"
-        $env:Path = "$shimRoot;$migrationToolBin;$($savedEnvironment['PATH'])"
-        $rollbackOutput = Join-Path $migrationHome "predecessor-rollback.out"
-        if ((Invoke-RawInstallerProcess $Url $rollbackOutput) -eq 0) {
-            throw "forced successor activation failure unexpectedly succeeded"
+        $env:MARGINALIA_DEFAULT_WHEEL_URL = $successorWheelUrl
+        if ((Invoke-RawInstallerProcess $Url $successorOutput) -ne 0) {
+            throw "stopped update from v0.0.41 to v$Version failed"
         }
-        Remove-Item Env:MARGINALIA_TEST_FAIL_ACTIVATION -ErrorAction SilentlyContinue
-        Remove-Item Env:MARGINALIA_REAL_UV -ErrorAction SilentlyContinue
-        $env:Path = "$migrationToolBin;$($savedEnvironment['PATH'])"
-        Assert-OutputContains $rollbackOutput "candidate activation failed"
-        Assert-OutputContains $rollbackOutput "restored and restarted Marginalia 0.0.40"
-        if (([string](& $legacyCli --version | Select-Object -First 1)).Trim() -ne "marginalia 0.0.40") {
-            throw "rollback did not restore the immutable predecessor CLI"
-        }
-        if (-not (Test-Path -LiteralPath $sentinel -PathType Leaf) -or
-            (Get-FileHash -Algorithm SHA256 -LiteralPath $sentinel).Hash.ToLowerInvariant() -ne $sentinelHash) {
-            throw "rollback did not restore the immutable predecessor tool sentinel"
-        }
-        if ((Get-FileHash -Algorithm SHA256 -LiteralPath $legacyTokenFile).Hash.ToLowerInvariant() -ne $legacyTokenHash) {
-            throw "rollback changed the immutable predecessor token"
-        }
-        $rollbackStatus = (& $legacyCli status --vault $legacyVault --json --timeout 5 2>$null | Out-String) | ConvertFrom-Json
-        $rollbackProcessId = [int]$rollbackStatus.pid
-        $trackedProcessIds += $rollbackProcessId
-        if ([string]$rollbackStatus.marginalia_version -ne "0.0.40" -or
-            $rollbackProcessId -le 0 -or $rollbackProcessId -eq $oldProcessId -or
-            -not (Test-ChildProcessAlive $rollbackProcessId)) {
-            throw "rollback did not restart the immutable predecessor daemon"
-        }
-        Write-Host "RELEASE_LIFECYCLE_PREDECESSOR_ROLLBACK_OK"
 
-        $migrationOutput = Join-Path $migrationHome "predecessor-migration.out"
-        if ((Invoke-RawInstallerProcess $Url $migrationOutput) -ne 0) {
-            throw "successor migration from immutable predecessor failed"
+        $successorVersion = ([string](
+            & $predecessorCli --version | Select-Object -First 1
+        )).Trim()
+        if ($successorVersion -ne "marginalia $Version") {
+            throw "stopped predecessor update left CLI version '$successorVersion'"
         }
-        $status = Confirm-DefaultDaemon $legacyCli $Version
-        $migratedProcessId = [int]$status.pid
-        $trackedProcessIds += $migratedProcessId
-        if ($migratedProcessId -le 0 -or $migratedProcessId -eq $rollbackProcessId) {
-            throw "successor migration did not replace the predecessor daemon"
+        $pidRecords = @()
+        if (Test-Path -LiteralPath $pidRoot) {
+            $pidRecords = @(Get-ChildItem -LiteralPath $pidRoot -Filter "server.pid" -Recurse -File)
         }
-        $appTokenFile = Join-Path (Join-Path $migrationHome ".marginalia") "daemon-7777.token"
-        if (-not (Test-Path -LiteralPath $appPidFile -PathType Leaf) -or
-            (Test-Path -LiteralPath $legacyPidFile)) {
-            throw "successor migration did not move lifecycle ownership to application scope"
+        if ($pidRecords.Count -ne 0 -or
+            (Test-ChildTcpPort 7777) -or
+            (Test-ChildTcpPort 8201)) {
+            throw "stopped predecessor update unexpectedly started a daemon"
         }
-        if (-not (Test-Path -LiteralPath $appTokenFile -PathType Leaf) -or
-            (Get-Item -LiteralPath $appTokenFile).Length -le 0 -or
-            (Get-FileHash -Algorithm SHA256 -LiteralPath $appTokenFile).Hash.ToLowerInvariant() -ne $legacyTokenHash -or
-            (Get-FileHash -Algorithm SHA256 -LiteralPath $legacyTokenFile).Hash.ToLowerInvariant() -ne $legacyTokenHash) {
-            throw "successor migration did not preserve the capability token across application scope migration"
-        }
-        if (Test-Path -LiteralPath $sentinel) {
-            throw "successful successor migration retained the predecessor-only tool sentinel"
-        }
-        Invoke-TestMarginalia $legacyCli @("stop", "--timeout", "30")
-        Wait-TestDaemonStopped $migratedProcessId @(7777, 8201)
-        Write-Host "RELEASE_LIFECYCLE_PREDECESSOR_MIGRATION_OK"
+        Write-Host "WINDOWS_RELEASE_LIFECYCLE_PREDECESSOR_STOPPED_UPDATE_OK"
     } finally {
-        $ownedProcesses = @()
-        $ownedProcessIds = @{}
         $cleanupFailure = ""
         try {
-            Remove-Item Env:MARGINALIA_TEST_FAIL_ACTIVATION -ErrorAction SilentlyContinue
-            Remove-Item Env:MARGINALIA_REAL_UV -ErrorAction SilentlyContinue
-
-            $legacyRecordProcessId = Read-ChildServerProcessId $legacyPidFile
-            $appRecordProcessId = Read-ChildServerProcessId $appPidFile
-            $cleanupProcessIds = @(
-                @($trackedProcessIds)
-                $legacyRecordProcessId
-                $appRecordProcessId
-            ) | Where-Object { [int]$_ -gt 0 } | Sort-Object -Unique
-            $migrationRootPrefix = [IO.Path]::GetFullPath($migrationHome).TrimEnd('\', '/') + `
-                [IO.Path]::DirectorySeparatorChar
-            foreach ($processId in $cleanupProcessIds) {
-                $candidateProcess = $null
-                try {
-                    $candidateProcess = Get-Process -Id ([int]$processId) -ErrorAction Stop
-                    $candidateExecutable = [IO.Path]::GetFullPath(
-                        $candidateProcess.MainModule.FileName
-                    )
-                    if (-not $candidateExecutable.StartsWith(
-                        $migrationRootPrefix,
-                        [StringComparison]::OrdinalIgnoreCase
-                    )) {
-                        $candidateProcess.Dispose()
-                        continue
-                    }
-                    $null = $candidateProcess.Handle
-                    $ownedProcesses += $candidateProcess
-                    $ownedProcessIds[[string]$processId] = $true
-                } catch {
-                    if ($null -ne $candidateProcess) {
-                        $candidateProcess.Dispose()
-                    }
-                    if ((Test-ChildProcessAlive ([int]$processId)) -and -not $cleanupFailure) {
-                        $cleanupFailure = "cleanup could not verify migration process $processId ownership"
-                    }
-                }
-            }
-
-            $cleanupCli = $legacyCli
-            if (-not $cleanupCli) {
+            if (-not $predecessorCli) {
                 foreach ($name in @("marginalia.exe", "marginalia.cmd", "marginalia")) {
-                    $candidate = Join-Path $migrationToolBin $name
+                    $candidate = Join-Path $predecessorToolBin $name
                     if (Test-Path -LiteralPath $candidate) {
-                        $cleanupCli = $candidate
+                        $predecessorCli = $candidate
                         break
                     }
                 }
             }
-            if ($cleanupCli -and $appRecordProcessId -gt 0 -and
-                $ownedProcessIds.ContainsKey([string]$appRecordProcessId)) {
-                try { & $cleanupCli stop --timeout 30 2>$null | Out-Null } catch {}
+            $pidRecords = @()
+            if (Test-Path -LiteralPath $pidRoot) {
+                $pidRecords = @(
+                    Get-ChildItem -LiteralPath $pidRoot -Filter "server.pid" -Recurse -File
+                )
             }
-            if ($cleanupCli -and $legacyRecordProcessId -gt 0 -and
-                $ownedProcessIds.ContainsKey([string]$legacyRecordProcessId)) {
-                try { & $cleanupCli stop --vault $legacyVault --timeout 30 2>$null | Out-Null } catch {}
-            }
-
-            foreach ($ownedProcess in $ownedProcesses) {
-                try {
-                    if (-not $ownedProcess.HasExited -and -not $ownedProcess.WaitForExit(5000)) {
-                        Stop-Process -InputObject $ownedProcess -Force -ErrorAction SilentlyContinue
-                        if (-not $ownedProcess.WaitForExit(5000) -and -not $cleanupFailure) {
-                            $cleanupFailure = "owned migration process $($ownedProcess.Id) remained live"
+            $daemonPresent = (
+                $pidRecords.Count -ne 0 -or
+                (Test-ChildTcpPort 7777) -or
+                (Test-ChildTcpPort 8201)
+            )
+            if ($daemonPresent) {
+                if (-not $predecessorCli) {
+                    $cleanupFailure = "nested predecessor daemon has no sandbox CLI"
+                } else {
+                    & $predecessorCli stop --timeout 30 2>$null | Out-Null
+                    if ($LASTEXITCODE -ne 0) {
+                        $cleanupFailure = "nested predecessor daemon stop failed"
+                    }
+                    for ($i = 0; $i -lt 60; $i++) {
+                        $pidRecords = @()
+                        if (Test-Path -LiteralPath $pidRoot) {
+                            $pidRecords = @(
+                                Get-ChildItem -LiteralPath $pidRoot `
+                                    -Filter "server.pid" -Recurse -File
+                            )
                         }
+                        if ($pidRecords.Count -eq 0 -and
+                            -not (Test-ChildTcpPort 7777) -and
+                            -not (Test-ChildTcpPort 8201)) {
+                            break
+                        }
+                        Start-Sleep -Milliseconds 500
                     }
-                } catch {
-                    if (-not $cleanupFailure) {
-                        $cleanupFailure = "cleanup could not stop migration process $($ownedProcess.Id): $($_.Exception.Message)"
+                    if ($pidRecords.Count -ne 0 -or
+                        (Test-ChildTcpPort 7777) -or
+                        (Test-ChildTcpPort 8201)) {
+                        $cleanupFailure = "nested predecessor daemon remained live after cleanup"
                     }
                 }
-            }
-
-            $portsClosed = $false
-            for ($i = 0; $i -lt 60; $i++) {
-                if (-not (Test-ChildTcpPort 7777) -and -not (Test-ChildTcpPort 8201)) {
-                    $portsClosed = $true
-                    break
-                }
-                Start-Sleep -Milliseconds 500
-            }
-            if (-not $portsClosed -and -not $cleanupFailure) {
-                $cleanupFailure = "migration daemon ports remained live after cleanup"
             }
         } finally {
-            foreach ($ownedProcess in $ownedProcesses) {
-                try { $ownedProcess.Dispose() } catch {}
-            }
             foreach ($name in $environmentNames) {
                 [Environment]::SetEnvironmentVariable($name, $savedEnvironment[$name], "Process")
             }
@@ -1377,7 +1241,7 @@ try {
     }
 
     if ($Profile -eq "release-lifecycle") {
-        Invoke-PredecessorMigration $InstallUrl $ExpectedVersion $ManifestUrl $TestHome
+        Invoke-StoppedPredecessorUpdate $InstallUrl $ExpectedVersion $ManifestUrl $TestHome
     }
     Invoke-RestMethod -UseBasicParsing $InstallUrl | Invoke-Expression
 
