@@ -13,14 +13,14 @@ $ErrorActionPreference = "Stop"
 $DefaultWheelUrl = if ($env:MARGINALIA_DEFAULT_WHEEL_URL) {
     $env:MARGINALIA_DEFAULT_WHEEL_URL
 } else {
-    "https://github.com/OktoLabsAI/marginalia-dist/releases/download/v0.0.42/marginalia-0.0.42-py3-none-any.whl"
+    "https://github.com/OktoLabsAI/marginalia-dist/releases/download/v0.0.43/marginalia-0.0.43-py3-none-any.whl"
 }
 $DefaultManifestUrl = if ($env:MARGINALIA_DEFAULT_MANIFEST_URL) {
     $env:MARGINALIA_DEFAULT_MANIFEST_URL
 } else {
     "https://raw.githubusercontent.com/OktoLabsAI/marginalia-dist/main/release-manifest.json"
 }
-$ExpectedVersion = if ($env:MARGINALIA_EXPECTED_VERSION) { $env:MARGINALIA_EXPECTED_VERSION } else { "0.0.42" }
+$ExpectedVersion = if ($env:MARGINALIA_EXPECTED_VERSION) { $env:MARGINALIA_EXPECTED_VERSION } else { "0.0.43" }
 $Extras = "serve,litellm"
 $PyVersion = "3.12"
 $Repo = if ($env:MARGINALIA_REPO) { $env:MARGINALIA_REPO } else { "git@github.com:OktoLabsAI/marginalia.git" }
