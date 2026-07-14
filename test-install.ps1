@@ -560,11 +560,14 @@ function Invoke-RawInstallerProcess([string]$Url, [string]$OutputPath) {
     $nestedPowerShell = Join-Path $PSHOME "powershell.exe"
     $installCommand = '$ProgressPreference = ''SilentlyContinue''; Invoke-RestMethod -UseBasicParsing $env:MARGINALIA_TEST_INSTALL_URL | Invoke-Expression'
     $oldInstallUrl = $env:MARGINALIA_TEST_INSTALL_URL
+    $oldErrorActionPreference = $ErrorActionPreference
     try {
         $env:MARGINALIA_TEST_INSTALL_URL = $Url
+        $ErrorActionPreference = "Continue"
         $output = @(& $nestedPowerShell -NoProfile -ExecutionPolicy Bypass -Command $installCommand 2>&1)
         $exitCode = $LASTEXITCODE
     } finally {
+        $ErrorActionPreference = $oldErrorActionPreference
         $env:MARGINALIA_TEST_INSTALL_URL = $oldInstallUrl
     }
     $output | Set-Content -LiteralPath $OutputPath -Encoding UTF8
