@@ -148,12 +148,11 @@ jobs:
             "$EVIDENCE_41"
 
           EVIDENCE_42=evidence/v0.0.42/linux-docker-tmux-release-lifecycle.txt
-          if [ -f "$EVIDENCE_42" ]; then
-          EVIDENCE_SHA_42=77913dbbc1819a5c1070b380065fa3152f5d82555d6f347788ba1ef974246d13
-          DRIVER_COMMIT_42=83ea8fcb89248b379ffa1f4742fa23c853a1f61b
+          EVIDENCE_SHA_42=936c6035cf7d8ac5ac7dc49d10ce747308b30fbb48423c31ec88da87934d4f62
+          DRIVER_COMMIT_42=acf004529196ed5e6e2a5b533b8c00cf348eb960
           DRIVER_SHA_42=f04740e2172492dc28587065e7ecd3e854f59f84a3afcef7a84d577fbfdc60ba
           INSTALL_SHA_42=084c5396ad7b24b0c204b4223c4fd1f61f2827ec296fc967e57201213a17b53b
-          MANIFEST_SHA_42=45084d1cecc768fb8a5fdbe72966b9d95ca616dad41f3d965781a5fe421ca55a
+          MANIFEST_SHA_42=5a973f6b63418e72e051d96005221bfa1134a77d27b993fe84d474974cded968
           test "$(sha256sum "$EVIDENCE_42" | awk '{print $1}')" = "$EVIDENCE_SHA_42"
           test "$(wc -c < "$EVIDENCE_42" | tr -d ' ')" = 53650
           test "$(wc -l < "$EVIDENCE_42" | tr -d ' ')" = 1938
@@ -206,7 +205,6 @@ jobs:
           grep -Fq \
             'RELEASE_LIFECYCLE_PREVIOUS_TOOL_SENTINEL_SHA256=f90f3c91e5938d65a61c77548df4f0c5c9e90f78729977a5be4eb3b4933a27c4' \
             "$EVIDENCE_42"
-          fi
 
       - name: Verify manifest, installers, docs, and public wheel
         run: |
@@ -287,6 +285,7 @@ jobs:
           operator_verified_dist_tag_commits = {
               "0.0.40": "19847892b7e129225011d21d6d1f2ce00f996458",
               "0.0.41": "92bebfac1347d60a84281e3ca4692565fd954ffe",
+              "0.0.42": "acf004529196ed5e6e2a5b533b8c00cf348eb960",
           }
           expected_dist_tag_commit = operator_verified_dist_tag_commits.get(version)
           current_evidence = Path(

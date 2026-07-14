@@ -13,8 +13,8 @@ This corrective release fixes the native Windows daemon ownership failures found
 `0.0.41`, restores app-first browser launch and application-scoped multi-vault management, and
 allows explicitly approved keyless private-LAN model endpoints. The corrected wheel gives cold
 Windows startup and foreground browser opening a 60-second readiness budget. Its exact public
-distribution, Linux Docker+tmux, and real interactive Windows PowerShell 5.1 gates must be repeated
-before promotion. The `0.0.41` tag and wheel remain immutable historical records.
+distribution and Linux Docker+tmux gates are green; the real interactive Windows PowerShell 5.1
+lifecycle remains before promotion. The `0.0.41` tag and wheel remain immutable historical records.
 
 ## Install On macOS Or Linux
 
@@ -226,9 +226,16 @@ Windows PowerShell rehearsal.
 
 ### v0.0.42 Linux release evidence
 
-The earlier development-candidate transcript was retired when the `0.0.42` wheel was corrected.
-Promotion requires a fresh Docker+tmux TTY rehearsal fetched from the corrected exact public dist
-driver. Its retained transcript and exact hashes will be recorded here after that run passes.
+The corrected v0.0.42 rehearsal fetched the driver from exact public dist commit
+`acf004529196ed5e6e2a5b533b8c00cf348eb960`, after all three jobs in
+[`distribution-gate` run 29360994849](https://github.com/OktoLabsAI/marginalia-dist/actions/runs/29360994849)
+passed on that SHA. Its retained transcript is
+[`evidence/v0.0.42/linux-docker-tmux-release-lifecycle.txt`](evidence/v0.0.42/linux-docker-tmux-release-lifecycle.txt),
+SHA-256 `936c6035cf7d8ac5ac7dc49d10ce747308b30fbb48423c31ec88da87934d4f62`
+(53,650 bytes; 1,938 lines). It records exact raw driver, installer, manifest, and immutable
+v0.0.40 predecessor URLs and SHA-256 values. Every lifecycle marker occurs exactly once, including
+predecessor rollback and migration, app-first zero-vault startup, stopped/running updates, refusal
+paths, activation rollback, and final stop. The final line records tmux pane status 0.
 
 ### Immutable v0.0.41 Linux-only evidence
 
