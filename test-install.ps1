@@ -558,7 +558,7 @@ function Confirm-DefaultDaemon([string]$Command, [string]$Version) {
 
 function Invoke-RawInstallerProcess([string]$Url, [string]$OutputPath) {
     $nestedPowerShell = Join-Path $PSHOME "powershell.exe"
-    $installCommand = '$ProgressPreference = "SilentlyContinue"; Invoke-RestMethod -UseBasicParsing $env:MARGINALIA_TEST_INSTALL_URL | Invoke-Expression'
+    $installCommand = '$ProgressPreference = ''SilentlyContinue''; Invoke-RestMethod -UseBasicParsing $env:MARGINALIA_TEST_INSTALL_URL | Invoke-Expression'
     $oldInstallUrl = $env:MARGINALIA_TEST_INSTALL_URL
     try {
         $env:MARGINALIA_TEST_INSTALL_URL = $Url
