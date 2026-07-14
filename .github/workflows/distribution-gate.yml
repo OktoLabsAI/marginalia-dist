@@ -259,8 +259,11 @@ jobs:
           assert '$DaemonTokenFile = Join-Path $HomeRoot "daemon-7777.token"' in powershell
           assert "Assert-ValidPreseedInputs" in powershell
           assert "requires MARGINALIA_VAULT" in powershell
-          assert "serve --daemon --no-open" in shell
-          assert '& $marginalia serve --daemon --no-open' in powershell
+          assert 'SERVE_ARGS=(serve --daemon --no-open)' in shell
+          assert 'SERVE_ARGS+=(--vault "${PREVIOUS_DAEMON_VAULT}")' in shell
+          assert '$serveArgs = @("serve", "--daemon", "--no-open")' in powershell
+          assert '$serveArgs += @("--vault", $script:PreviousDaemonVault)' in powershell
+          assert '& $marginalia @serveArgs' in powershell
           assert 'STOP_COMMAND=("${STAGE_CLI}" stop --vault "${PREVIOUS_DAEMON_VAULT}" --timeout 30)' in shell
           assert '$stopArgs = @("stop", "--vault", $script:PreviousDaemonVault, "--timeout", "30")' in powershell
           assert 'serve --help 2>/dev/null | grep -q -- \'--no-open\'' in shell
@@ -1457,6 +1460,8 @@ jobs:
             'Find-VerifiedLegacyLockRoot $oldPid $statusVault',
             '$script:PreviousDaemonVault = $statusVault',
             '$stopArgs = @("stop", "--vault", $script:PreviousDaemonVault, "--timeout", "30")',
+            '$serveArgs += @("--vault", $script:PreviousDaemonVault)',
+            '& $marginalia @serveArgs',
             'Stop it first: marginalia stop',
             'could not stop the verified daemon (pid $oldPid)'
           )) {

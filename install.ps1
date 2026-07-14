@@ -901,7 +901,15 @@ if ($env:MARGINALIA_NO_SERVE -eq "1") {
         Step "Starting the Marginalia daemon (UI/REST :7777 + MCP :8201)"
     }
     $script:CandidateDaemonStarted = $true
-    & $marginalia serve --daemon --no-open
+    $serveArgs = @("serve", "--daemon", "--no-open")
+    # The 0.0.40 daemon credential lives under its verified vault. Give the
+    # successor that vault exactly once so its runtime can adopt the credential
+    # into application scope without rotating connected MCP clients. Fresh and
+    # already application-scoped starts remain vaultless.
+    if ($script:LegacyDaemon -and $script:PreviousDaemonVault) {
+        $serveArgs += @("--vault", $script:PreviousDaemonVault)
+    }
+    & $marginalia @serveArgs
     $serveExitCode = $LASTEXITCODE
     $observedCandidateProcessId = Read-ServerProcessId $DaemonPidFile
     if ($observedCandidateProcessId -gt 0) {

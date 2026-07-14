@@ -853,7 +853,15 @@ else
   # name onboard recorded. (A keyless *remote* embedding endpoint is not covered
   # here; the default fastembed embedder is local and needs no key.)
   CANDIDATE_DAEMON_STARTED="1"
-  if ! marginalia serve --daemon --no-open; then
+  SERVE_ARGS=(serve --daemon --no-open)
+  # The 0.0.40 daemon credential lives under its verified vault. Give the
+  # successor that vault exactly once so its runtime can adopt the credential
+  # into application scope without rotating connected MCP clients. Fresh and
+  # already application-scoped starts remain vaultless.
+  if [ -n "${LEGACY_DAEMON}" ] && [ -n "${PREVIOUS_DAEMON_VAULT}" ]; then
+    SERVE_ARGS+=(--vault "${PREVIOUS_DAEMON_VAULT}")
+  fi
+  if ! marginalia "${SERVE_ARGS[@]}"; then
     SERVE_OK=""
     warn "daemon start command failed"
   else
