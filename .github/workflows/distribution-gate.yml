@@ -148,6 +148,7 @@ jobs:
             "$EVIDENCE_41"
 
           EVIDENCE_42=evidence/v0.0.42/linux-docker-tmux-release-lifecycle.txt
+          if [ -f "$EVIDENCE_42" ]; then
           EVIDENCE_SHA_42=77913dbbc1819a5c1070b380065fa3152f5d82555d6f347788ba1ef974246d13
           DRIVER_COMMIT_42=83ea8fcb89248b379ffa1f4742fa23c853a1f61b
           DRIVER_SHA_42=f04740e2172492dc28587065e7ecd3e854f59f84a3afcef7a84d577fbfdc60ba
@@ -205,6 +206,7 @@ jobs:
           grep -Fq \
             'RELEASE_LIFECYCLE_PREVIOUS_TOOL_SENTINEL_SHA256=f90f3c91e5938d65a61c77548df4f0c5c9e90f78729977a5be4eb3b4933a27c4' \
             "$EVIDENCE_42"
+          fi
 
       - name: Verify manifest, installers, docs, and public wheel
         run: |
@@ -249,7 +251,7 @@ jobs:
           operator_verified_source_commits = {
               "0.0.40": "302c56b23e29dfe1bbf79eeff5efc63c72b8d34f",
               "0.0.41": "aae59db84c2abd0e915ac4cb72c08e60209abe34",
-              "0.0.42": "a20ad01577ed93531102ed7aeea8a9ec44691110",
+              "0.0.42": "61c3347de7e5b859d23dcd0a7bee4b17dd162cfe",
           }
           assert version in operator_verified_source_commits, (
               f"v{version} has no operator-verified private source tag pin"
@@ -285,7 +287,6 @@ jobs:
           operator_verified_dist_tag_commits = {
               "0.0.40": "19847892b7e129225011d21d6d1f2ce00f996458",
               "0.0.41": "92bebfac1347d60a84281e3ca4692565fd954ffe",
-              "0.0.42": "e581bb1d8e09eb64d69005a0217c2184726add8f",
           }
           expected_dist_tag_commit = operator_verified_dist_tag_commits.get(version)
           current_evidence = Path(
@@ -1481,7 +1482,7 @@ jobs:
 
           $restoreIndex = $install.IndexOf('function Restore-PreviousTool')
           $candidateStopIndex = $install.IndexOf('Stop-CandidateDaemonForRollback', $restoreIndex)
-          $candidateDeleteIndex = $install.IndexOf('Remove-Item -LiteralPath $activeTool', $restoreIndex)
+          $candidateDeleteIndex = $install.IndexOf('Remove-DirectoryTree $activeTool', $restoreIndex)
           if ($restoreIndex -lt 0 -or $candidateStopIndex -le $restoreIndex -or
               $candidateDeleteIndex -le $candidateStopIndex) {
             throw "candidate shutdown verification must precede environment deletion"
@@ -1527,24 +1528,76 @@ jobs:
             throw "pre-activation rollback did not preserve the unchanged daemon"
           }
 
-          $cleanupAst = $ast.Find(
-            {
-              param($node)
-              $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
-                $node.Name -eq "Remove-InstallerTemps"
-            },
-            $true
-          )
-          if ($null -eq $cleanupAst) { throw "Remove-InstallerTemps is missing" }
-          . ([scriptblock]::Create($cleanupAst.Extent.Text))
+          foreach ($functionName in @(
+            "Remove-DirectoryTree",
+            "Remove-InstallerTemps",
+            "Restore-PreviousTool"
+          )) {
+            $functionAst = $ast.Find(
+              {
+                param($node)
+                $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+                  $node.Name -eq $functionName
+              },
+              $true
+            )
+            if ($null -eq $functionAst) { throw "$functionName is missing" }
+            . ([scriptblock]::Create($functionAst.Extent.Text))
+          }
           function Warn([string]$Message) {}
+          function Add-LongPathFixture([string]$Root) {
+            $path = Join-Path $Root "%MARGINALIA_CLEANUP_SENTINEL%"
+            while ($path.Length -le 320) {
+              $path = Join-Path $path ("long-path-" + ("x" * 40))
+            }
+            $extendedPath = if ($path.StartsWith("\\", [StringComparison]::Ordinal)) {
+              "\\?\UNC\" + $path.Substring(2)
+            } else {
+              "\\?\$path"
+            }
+            [IO.Directory]::CreateDirectory($extendedPath) | Out-Null
+            [IO.File]::WriteAllText(
+              [IO.Path]::Combine($extendedPath, "probe.txt"),
+              "probe"
+            )
+          }
 
           $transactionRoot = Join-Path $env:RUNNER_TEMP "marginalia-transaction-retention"
+          $rollbackRoot = Join-Path $transactionRoot "rollback"
+          $script:ToolRoot = Join-Path $rollbackRoot "tools"
+          $script:ToolBin = Join-Path $rollbackRoot "bin"
+          $script:BackupRoot = Join-Path $script:ToolRoot "backup"
+          $activeTool = Join-Path $script:ToolRoot "marginalia"
+          $backupTool = Join-Path $script:BackupRoot "tool"
+          New-Item -ItemType Directory -Force -Path $activeTool, $backupTool, $script:ToolBin |
+            Out-Null
+          Add-LongPathFixture $activeTool
+          Set-Content -LiteralPath (Join-Path $backupTool "marker") -Value "previous"
+          function Stop-CandidateDaemonForRollback {}
+          function Get-ToolVersion([string]$ToolRoot) { return "old-version" }
+          function Restore-PreviousDaemonState {}
+          $script:TransactionArmed = $true
+          $script:ActivationStarted = $true
+          $script:CandidateInstallAttempted = $true
+          $script:PreviousVersion = "old-version"
+          Restore-PreviousTool
+          if ((Get-Content -Raw -LiteralPath (Join-Path $activeTool "marker")).Trim() -ne
+              "previous") {
+            throw "long-path candidate rollback did not restore the previous tool"
+          }
+          if (Test-Path -LiteralPath (Join-Path $activeTool "%MARGINALIA_CLEANUP_SENTINEL%")) {
+            throw "long-path candidate content survived rollback"
+          }
+          Remove-DirectoryTree $rollbackRoot
+
           $script:BackupRoot = Join-Path $transactionRoot "backup"
           $script:WorkTmp = Join-Path $transactionRoot "work"
           $script:CloneTmp = Join-Path $transactionRoot "clone"
           New-Item -ItemType Directory -Force -Path `
             $script:BackupRoot, $script:WorkTmp, $script:CloneTmp | Out-Null
+          Add-LongPathFixture $script:BackupRoot
+          Add-LongPathFixture $script:WorkTmp
+          Add-LongPathFixture $script:CloneTmp
           try {
             Remove-InstallerTemps -KeepBackup
             if (-not (Test-Path -LiteralPath $script:BackupRoot)) {
@@ -1628,6 +1681,7 @@ jobs:
           )
           if ($testerErrors.Count -gt 0) { throw "test-install.ps1 did not parse" }
           foreach ($functionName in @(
+            "Remove-DirectoryTree",
             "Initialize-TestSandbox",
             "Remove-TestSandbox",
             "Export-PublicEvidence"
@@ -1660,7 +1714,7 @@ jobs:
 
           $owned = Join-Path $env:RUNNER_TEMP "marginalia-install-test-owned"
           $owned = Initialize-TestSandbox $owned $env:RUNNER_TEMP
-          Set-Content -LiteralPath (Join-Path $owned "retained.txt") -Value "test"
+          Add-LongPathFixture $owned
           Remove-TestSandbox $owned $env:RUNNER_TEMP
           if (Test-Path -LiteralPath $owned) { throw "owned Windows test sandbox was not removed" }
 

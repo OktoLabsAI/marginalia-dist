@@ -116,6 +116,20 @@ function Run-Checked([string]$Command, [string[]]$Arguments) {
     }
 }
 
+function Remove-DirectoryTree([string]$Path) {
+    if (-not $Path -or -not (Test-Path -LiteralPath $Path)) { return }
+    $fullPath = [IO.Path]::GetFullPath($Path).TrimEnd('\')
+    $extendedPath = if ($fullPath.StartsWith("\\", [StringComparison]::Ordinal)) {
+        "\\?\UNC\" + $fullPath.Substring(2)
+    } else {
+        "\\?\$fullPath"
+    }
+    [IO.Directory]::Delete($extendedPath, $true)
+    if (Test-Path -LiteralPath $fullPath) {
+        throw "could not remove directory tree: $fullPath"
+    }
+}
+
 function Prompt-Value([string]$Message, [string]$Default = "") {
     if ($Default) {
         $answer = Read-Host "$Message [$Default]"
@@ -465,7 +479,7 @@ function Restore-PreviousTool {
         )
         if ($replaceActiveInstallation) {
             if (Test-Path -LiteralPath $activeTool) {
-                Remove-Item -LiteralPath $activeTool -Recurse -Force -ErrorAction Stop
+                Remove-DirectoryTree $activeTool
             }
         } elseif ($activeVersion -ne $script:PreviousVersion) {
             throw "previous tool backup is missing and the active version cannot be verified; files retained"
@@ -505,12 +519,12 @@ function Restore-PreviousTool {
 
 function Remove-InstallerTemps([switch]$KeepBackup) {
     if ($script:BackupRoot -and -not $KeepBackup) {
-        Remove-Item -Recurse -Force $script:BackupRoot -ErrorAction SilentlyContinue
+        Remove-DirectoryTree $script:BackupRoot
     } elseif ($script:BackupRoot -and $KeepBackup) {
         Warn "rollback incomplete; previous tool backup retained at $($script:BackupRoot)"
     }
-    if ($script:WorkTmp) { Remove-Item -Recurse -Force $script:WorkTmp -ErrorAction SilentlyContinue }
-    if ($script:CloneTmp) { Remove-Item -Recurse -Force $script:CloneTmp -ErrorAction SilentlyContinue }
+    if ($script:WorkTmp) { Remove-DirectoryTree $script:WorkTmp }
+    if ($script:CloneTmp) { Remove-DirectoryTree $script:CloneTmp }
 }
 
 trap {
@@ -959,7 +973,7 @@ $script:ActivationCommitted = $true
 $script:TransactionArmed = $false
 $script:ActivationStarted = $false
 $script:CandidateInstallAttempted = $false
-Remove-Item -Recurse -Force $script:BackupRoot -ErrorAction SilentlyContinue
+Remove-DirectoryTree $script:BackupRoot
 $script:BackupRoot = $null
 
 $globalUrl = $McpUrl

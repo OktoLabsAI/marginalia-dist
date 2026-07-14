@@ -5,16 +5,16 @@ local-first knowledge graph you can drive from Claude Code (MCP), the CLI, or as
 a Python library.
 
 The current public prerelease is `0.0.42`: source tag
-`a20ad01577ed93531102ed7aeea8a9ec44691110`, wheel
+`61c3347de7e5b859d23dcd0a7bee4b17dd162cfe`, wheel
 [`marginalia-0.0.42-py3-none-any.whl`](https://github.com/OktoLabsAI/marginalia-dist/releases/download/v0.0.42/marginalia-0.0.42-py3-none-any.whl),
-SHA-256 `238bcf05646e5948475fe4a6d02be141480ca344d7ee080b39ca7352a382399d`
-(785,387 bytes; 139 wheel members). All six source jobs passed on the exact tagged merge SHA.
+SHA-256 `ed3b1e41da1df17ed4e02b32e8ff5570fbd0207eac0d1675968bc250246406d6`
+(785,426 bytes; 139 wheel members). All six source jobs passed on the exact tagged merge SHA.
 This corrective release fixes the native Windows daemon ownership failures found in immutable
 `0.0.41`, restores app-first browser launch and application-scoped multi-vault management, and
-allows explicitly approved keyless private-LAN model endpoints. Its exact public distribution and
-Linux Docker+tmux gates are green; it remains a prerelease until the real interactive Windows
-PowerShell 5.1 lifecycle is retained and green. The `0.0.41` tag and wheel remain immutable
-historical records.
+allows explicitly approved keyless private-LAN model endpoints. The corrected wheel gives cold
+Windows startup and foreground browser opening a 60-second readiness budget. Its exact public
+distribution, Linux Docker+tmux, and real interactive Windows PowerShell 5.1 gates must be repeated
+before promotion. The `0.0.41` tag and wheel remain immutable historical records.
 
 ## Install On macOS Or Linux
 
@@ -226,16 +226,9 @@ Windows PowerShell rehearsal.
 
 ### v0.0.42 Linux release evidence
 
-The v0.0.42 rehearsal fetched the driver from exact public dist commit
-`83ea8fcb89248b379ffa1f4742fa23c853a1f61b`, after all three jobs in
-[`distribution-gate` run 29356592561](https://github.com/OktoLabsAI/marginalia-dist/actions/runs/29356592561)
-passed on that SHA. Its retained transcript is
-[`evidence/v0.0.42/linux-docker-tmux-release-lifecycle.txt`](evidence/v0.0.42/linux-docker-tmux-release-lifecycle.txt),
-SHA-256 `77913dbbc1819a5c1070b380065fa3152f5d82555d6f347788ba1ef974246d13`
-(53,650 bytes; 1,938 lines). It records exact raw driver, installer, manifest, and immutable
-v0.0.40 predecessor URLs and SHA-256 values. Every lifecycle marker occurs exactly once, including
-predecessor rollback and migration, app-first zero-vault startup, stopped/running updates, refusal
-paths, activation rollback, and final stop. The final line records tmux pane status 0.
+The earlier development-candidate transcript was retired when the `0.0.42` wheel was corrected.
+Promotion requires a fresh Docker+tmux TTY rehearsal fetched from the corrected exact public dist
+driver. Its retained transcript and exact hashes will be recorded here after that run passes.
 
 ### Immutable v0.0.41 Linux-only evidence
 

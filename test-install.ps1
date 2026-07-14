@@ -52,6 +52,20 @@ function Test-ProcessAlive([int]$ProcessId) {
     }
 }
 
+function Remove-DirectoryTree([string]$Path) {
+    if (-not $Path -or -not (Test-Path -LiteralPath $Path)) { return }
+    $fullPath = [IO.Path]::GetFullPath($Path).TrimEnd('\')
+    $extendedPath = if ($fullPath.StartsWith("\\", [StringComparison]::Ordinal)) {
+        "\\?\UNC\" + $fullPath.Substring(2)
+    } else {
+        "\\?\$fullPath"
+    }
+    [IO.Directory]::Delete($extendedPath, $true)
+    if (Test-Path -LiteralPath $fullPath) {
+        throw "could not remove directory tree: $fullPath"
+    }
+}
+
 function Read-TestServerProcessId([string]$Path) {
     try {
         $record = Get-Item -LiteralPath $Path -ErrorAction Stop
@@ -147,7 +161,7 @@ function Remove-TestSandbox([string]$HomePath, [string]$TempRoot) {
         (Get-Content -Raw -LiteralPath $marker).Trim() -ne "marginalia-test-sandbox-v1") {
         throw "refusing to delete unowned test directory: $resolvedHome"
     }
-    Remove-Item -LiteralPath $resolvedHome -Recurse -Force -ErrorAction Stop
+    Remove-DirectoryTree $resolvedHome
 }
 
 function Export-PublicEvidence(
