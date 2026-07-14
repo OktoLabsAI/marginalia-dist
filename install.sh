@@ -4,9 +4,10 @@
 #
 #   curl -fsSL https://<dist-host>/install.sh | bash
 #
-# Takes a fresh machine from zero to a running Marginalia daemon wired into
-# Claude Code:  prereqs → install tool → create vault → configure LLM →
-# serve → register the MCP server.
+# Takes a fresh machine from zero to a running Marginalia application wired into
+# Claude Code: prereqs → install tool → serve/open the app → register MCP.
+# Vault creation and provider setup are application-first by default. Automation
+# may explicitly preseed one vault and run CLI onboarding with MARGINALIA_VAULT.
 #
 # Everything is overridable by environment variable so the SAME script works
 # piped to bash (non-interactive) and run from a clone (interactive):
@@ -18,15 +19,16 @@
 #   MARGINALIA_WHEEL_SHA256 required SHA-256 for a custom wheel without a manifest
 #   MARGINALIA_REPO         git URL to clone   (default: SSH source repo)
 #   MARGINALIA_REF          git ref to check out (default: repo default branch)
-#   MARGINALIA_VAULT        vault name         (default: mynotes)
-#   MARGINALIA_PACKS        type packs         (default: core,research,personal)
-#   MARGINALIA_LLM_PROVIDER provider id passed to `marginalia onboard`
+#   MARGINALIA_VAULT        optional vault name to preseed before opening the app
+#   MARGINALIA_PACKS        preseed type packs (requires MARGINALIA_VAULT)
+#   MARGINALIA_LLM_PROVIDER preseed provider passed to `marginalia onboard`
 #   MARGINALIA_LLM_API_BASE provider base URL
 #   MARGINALIA_LLM_MODEL    model name (also skips model discovery)
 #   MARGINALIA_LLM_API_KEY_ENV MARGINALIA_* environment variable holding the key
 #   MARGINALIA_LLM_ALLOW_REMOTE=1 explicit opt-in for a non-loopback LLM endpoint
 #   MARGINALIA_ONBOARD_NONINTERACTIVE=1 never prompt during onboarding
 #   MARGINALIA_NO_SERVE=1   install + configure only; don't start the daemon
+#   MARGINALIA_NO_OPEN=1    don't open the verified local UI in a browser
 #   MARGINALIA_NO_MCP=1     don't run `claude mcp add`
 #
 set -euo pipefail
@@ -34,19 +36,25 @@ set -euo pipefail
 # ── config ────────────────────────────────────────────────────────────────
 # The public distribution copy of this script bakes a release-wheel URL here so
 # `curl … | bash` needs no env. Empty in the source repo (which clones instead).
-DEFAULT_WHEEL_URL="${MARGINALIA_DEFAULT_WHEEL_URL:-https://github.com/OktoLabsAI/marginalia-dist/releases/download/v0.0.40/marginalia-0.0.40-py3-none-any.whl}"
+DEFAULT_WHEEL_URL="${MARGINALIA_DEFAULT_WHEEL_URL:-https://github.com/OktoLabsAI/marginalia-dist/releases/download/v0.0.41/marginalia-0.0.41-py3-none-any.whl}"
 DEFAULT_MANIFEST_URL="${MARGINALIA_DEFAULT_MANIFEST_URL:-https://raw.githubusercontent.com/OktoLabsAI/marginalia-dist/main/release-manifest.json}"
-EXPECTED_VERSION="${MARGINALIA_EXPECTED_VERSION:-0.0.40}"
-EXTRAS="embeddings,ladybug,mcp,litellm"
+EXPECTED_VERSION="${MARGINALIA_EXPECTED_VERSION:-0.0.41}"
+EXTRAS="serve,litellm"
 PY_VERSION="3.12"
 REPO="${MARGINALIA_REPO:-git@github.com:OktoLabsAI/marginalia.git}"
 REF="${MARGINALIA_REF:-}"
-VAULT="${MARGINALIA_VAULT:-mynotes}"
+VAULT="${MARGINALIA_VAULT:-}"
 PACKS="${MARGINALIA_PACKS:-core,research,personal}"
 HOME_ROOT="${HOME}/.marginalia"
-VAULT_DIR="${HOME_ROOT}/vaults/${VAULT}"
+VAULT_DIR=""
+if [ -n "${VAULT}" ]; then
+  VAULT_DIR="${HOME_ROOT}/vaults/${VAULT}"
+fi
 REST_URL="http://127.0.0.1:7777"
 MCP_URL="http://127.0.0.1:8201/mcp"
+DAEMON_TOKEN_FILE="${HOME_ROOT}/daemon-7777.token"
+DAEMON_RUNTIME_ROOT="${HOME_ROOT}/runtime"
+DAEMON_PID_FILE="${DAEMON_RUNTIME_ROOT}/.marginalia/server.pid"
 
 # Transaction state. The EXIT trap restores the exact prior uv tool if anything
 # fails after activation begins; vault/provider configuration always remains
@@ -58,7 +66,8 @@ TOOL_BIN=""
 BACKUP_ROOT=""
 PREVIOUS_VERSION=""
 PREVIOUS_COMMAND=""
-ROLLBACK_VAULT=""
+PREVIOUS_DAEMON_VAULT=""
+LEGACY_DAEMON=""
 ACTIVATION_STARTED=""
 ACTIVATION_COMMITTED=""
 CANDIDATE_DAEMON_STARTED=""
@@ -72,6 +81,53 @@ step() { printf "\n%s==>%s %s%s%s\n" "$B$G" "$X" "$B" "$1" "$X"; }
 info() { printf "    %s\n" "$1"; }
 warn() { printf "%s !! %s%s\n" "$Y" "$1" "$X"; }
 die()  { printf "%serror:%s %s\n" "$R" "$X" "$1" >&2; exit 1; }
+
+validate_preseed_inputs() {
+  [ -n "${VAULT}" ] && return 0
+
+  local name value
+  for name in \
+    MARGINALIA_PACKS \
+    MARGINALIA_LLM_PROVIDER \
+    MARGINALIA_LLM_API_BASE \
+    MARGINALIA_LLM_MODEL \
+    MARGINALIA_LLM_API_KEY_ENV \
+    MARGINALIA_LLM_SKIP_DISCOVERY \
+    MARGINALIA_LLM_ALLOW_REMOTE \
+    MARGINALIA_ALLOW_REMOTE_LLM \
+    MARGINALIA_ONBOARD_NONINTERACTIVE
+  do
+    value="${!name:-}"
+    if [ -n "${value}" ]; then
+      die "${name} requires MARGINALIA_VAULT; omit preseed settings and configure vaults in the Web UI, or set MARGINALIA_VAULT explicitly"
+    fi
+  done
+}
+
+validate_preseed_inputs
+
+open_application_ui() {
+  local url="$1"
+  case "$(uname -s 2>/dev/null || true)" in
+    Darwin)
+      command -v open >/dev/null 2>&1 || return 1
+      open "${url}" >/dev/null 2>&1
+      ;;
+    MINGW*|MSYS*|CYGWIN*)
+      command -v cmd.exe >/dev/null 2>&1 || return 1
+      cmd.exe /c start "" "${url}" >/dev/null 2>&1
+      ;;
+    *)
+      command -v xdg-open >/dev/null 2>&1 || return 1
+      xdg-open "${url}" >/dev/null 2>&1
+      ;;
+  esac
+}
+
+require_expected_wheel_version() {
+  [ -n "${1:-}" ] \
+    || die "wheel verification requires a manifest version or MARGINALIA_EXPECTED_VERSION"
+}
 
 read_server_pid() {
   local pid_file="$1"
@@ -98,26 +154,14 @@ if pid > 0:
 }
 
 find_daemon_lock_root() {
-  local target_pid="$1" active_vault="${2:-}" root="" pid_file="" recorded_pid=""
-  for root in "${HOME_ROOT}/runtime" "${active_vault}" "${HOME_ROOT}"/vaults/*; do
-    [ -n "${root}" ] || continue
-    pid_file="${root}/.marginalia/server.pid"
-    [ -f "${pid_file}" ] || continue
-    recorded_pid="$(read_server_pid "${pid_file}")"
-    if [ "${recorded_pid}" = "${target_pid}" ]; then
-      printf '%s' "${root}"
-      return 0
-    fi
-  done
+  local target_pid="$1" recorded_pid=""
+  [ -f "${DAEMON_PID_FILE}" ] || return 1
+  recorded_pid="$(read_server_pid "${DAEMON_PID_FILE}")"
+  if [ "${recorded_pid}" = "${target_pid}" ]; then
+    printf '%s' "${DAEMON_RUNTIME_ROOT}"
+    return 0
+  fi
   return 1
-}
-
-authenticated_get() {
-  local token="$1" url="$2"
-  # Feed the header through curl's stdin config so the capability token never
-  # appears in argv/process listings. Daemon tokens are URL-safe ASCII.
-  printf 'header = "Authorization: Bearer %s"\n' "${token}" \
-    | curl -fsS --max-time 2 --config - "${url}"
 }
 
 claude_mcp_registration_matches() {
@@ -160,20 +204,15 @@ claude_mcp_registration_scope() {
 }
 
 daemon_version() {
-  local cli="$1" vault_path="$2" token="" payload="" version=""
-  local token_file="${vault_path}/.marginalia/daemon.token"
-  if [ -f "${token_file}" ]; then
-    IFS= read -r token < "${token_file}" || true
-  fi
-  [ -n "${token}" ] || return 1
-  payload="$(MARGINALIA_AUTH_TOKEN="${token}" "${cli}" status \
-    --vault "${vault_path}" --json --timeout 2 \
-    2>/dev/null || true)"
+  local cli="$1" vault="${2:-}" payload="" version=""
+  local status_command=("${cli}" status --json --timeout 2)
+  [ -n "${vault}" ] && status_command+=(--vault "${vault}")
+  payload="$("${status_command[@]}" 2>/dev/null || true)"
   version="$(printf '%s' "${payload}" | "${VERIFY_PYTHON}" -c \
     'import json,sys; print(json.load(sys.stdin).get("marginalia_version", ""))' \
     2>/dev/null || true)"
   if [ -z "${version}" ]; then
-    payload="$(authenticated_get "${token}" "${REST_URL}/version" 2>/dev/null || true)"
+    payload="$(curl -fsS --max-time 2 "${REST_URL}/version" 2>/dev/null || true)"
     version="$(printf '%s' "${payload}" | "${VERIFY_PYTHON}" -c \
       'import json,sys; print(json.load(sys.stdin).get("marginalia_version", ""))' \
       2>/dev/null || true)"
@@ -196,20 +235,27 @@ restart_previous_daemon() {
 
   local restart_command="${TOOL_BIN}/marginalia"
   [ -x "${restart_command}" ] || restart_command="${PREVIOUS_COMMAND}"
-  if [ -z "${restart_command}" ] || [ ! -x "${restart_command}" ] \
-     || [ -z "${ROLLBACK_VAULT}" ]; then
-    warn "previous daemon was running but its command/vault could not be restored"
+  if [ -z "${restart_command}" ] || [ ! -x "${restart_command}" ]; then
+    warn "previous daemon was running but its command could not be restored"
     return 1
   fi
-  if ! "${restart_command}" serve --daemon --vault "${ROLLBACK_VAULT}" \
-       >/dev/null 2>&1; then
+  local restart_args=(serve --daemon)
+  # ADR-0034 daemons open the browser by default and support --no-open. The
+  # immutable 0.0.40 predecessor lacks that option and never auto-opened.
+  if "${restart_command}" serve --help 2>/dev/null | grep -q -- '--no-open'; then
+    restart_args+=(--no-open)
+  fi
+  if [ -n "${PREVIOUS_DAEMON_VAULT}" ]; then
+    restart_args+=(--vault "${PREVIOUS_DAEMON_VAULT}")
+  fi
+  if ! "${restart_command}" "${restart_args[@]}" >/dev/null 2>&1; then
     warn "previous tool is available but its daemon could not be restarted"
     return 1
   fi
 
   local running_version=""
   for _ in $(seq 1 30); do
-    running_version="$(daemon_version "${restart_command}" "${ROLLBACK_VAULT}" || true)"
+    running_version="$(daemon_version "${restart_command}" "${PREVIOUS_DAEMON_VAULT}" || true)"
     [ -n "${running_version}" ] && break
     sleep 1
   done
@@ -225,9 +271,9 @@ restart_previous_daemon() {
 stop_candidate_daemon() {
   [ -n "${CANDIDATE_DAEMON_STARTED}" ] || return 0
   local candidate_pid=""
-  candidate_pid="$(read_server_pid "${ROLLBACK_VAULT}/.marginalia/server.pid")"
-  if [ -x "${TOOL_BIN}/marginalia" ] && [ -n "${ROLLBACK_VAULT}" ]; then
-    "${TOOL_BIN}/marginalia" stop --vault "${ROLLBACK_VAULT}" --timeout 10 \
+  candidate_pid="$(read_server_pid "${DAEMON_PID_FILE}")"
+  if [ -x "${TOOL_BIN}/marginalia" ]; then
+    "${TOOL_BIN}/marginalia" stop --timeout 10 \
       >/dev/null 2>&1 || true
   fi
   if { [ -n "${candidate_pid}" ] && kill -0 "${candidate_pid}" 2>/dev/null; } \
@@ -426,6 +472,8 @@ if [ "${CANDIDATE_KIND}" = "wheel" ]; then
     esac
   fi
 
+  require_expected_wheel_version "${EXPECTED_VERSION}"
+
   EXPECTED_SHA="${MARGINALIA_WHEEL_SHA256:-${MANIFEST_SHA}}"
   [ -n "${EXPECTED_SHA}" ] \
     || die "wheel verification requires MARGINALIA_MANIFEST or MARGINALIA_WHEEL_SHA256"
@@ -477,10 +525,10 @@ if [ -n "${STAGED_CLI_VERSION}" ] \
 fi
 info "staged Marginalia ${CANDIDATE_VERSION}; active installation is still untouched"
 
-# ── 2b. authenticated update discovery ───────────────────────────────
+# ── 2b. app-scoped update discovery ──────────────────────────────────
 # Replacing the installed package under a LIVE daemon leaves it serving stale
-# file handles. Use the supported authenticated CLI status surface; the Bearer
-# fallback exists only to migrate older releases that predate `marginalia status`.
+# file handles. Lifecycle ownership and status are application-scoped; selecting
+# a vault is independent of starting, stopping, or updating the daemon.
 json_value() {
   printf '%s' "$1" | "${VERIFY_PYTHON}" -c \
     'import json,sys; value=json.load(sys.stdin).get(sys.argv[1], ""); print(value if value is not None else "")' \
@@ -496,132 +544,143 @@ mcp_port_in_use() {
 }
 
 discover_daemon_status() {
-  local payload="" vault_json="" vault_path="" token_file="" token=""
-  if command -v marginalia >/dev/null 2>&1; then
-    payload="$(marginalia status --json --timeout 2 2>/dev/null || true)"
+  local payload=""
+  if [ -n "${PREVIOUS_COMMAND}" ] && [ -x "${PREVIOUS_COMMAND}" ]; then
+    payload="$("${PREVIOUS_COMMAND}" status --json --timeout 2 2>/dev/null || true)"
     if [ -n "${payload}" ] && [ -n "$(json_value "${payload}" pid)" ]; then
       printf '%s' "${payload}"
       return 0
     fi
-    vault_json="$(marginalia vault list --json 2>/dev/null || true)"
   fi
-
-  {
-    if [ -n "${vault_json}" ]; then
-      printf '%s' "${vault_json}" | "${VERIFY_PYTHON}" -c \
-        'import json,sys; [print(v.get("path", "")) for v in json.load(sys.stdin).get("vaults", [])]' \
-        2>/dev/null || true
-    fi
-    for token_file in "${HOME_ROOT}"/vaults/*/.marginalia/daemon.token; do
-      [ -f "${token_file}" ] && dirname "$(dirname "${token_file}")"
-    done
-  } | while IFS= read -r vault_path; do
-    [ -n "${vault_path}" ] || continue
-    token_file="${vault_path}/.marginalia/daemon.token"
-    [ -f "${token_file}" ] || continue
-    IFS= read -r token < "${token_file}" || true
-    [ -n "${token}" ] || continue
-    payload="$(authenticated_get "${token}" "${REST_URL}/api/v1/status" \
-      2>/dev/null || true)"
-    if [ -z "${payload}" ]; then
-      payload="$(authenticated_get "${token}" "${REST_URL}/health" \
-        2>/dev/null || true)"
-    fi
-    if [ -n "${payload}" ] && [ -n "$(json_value "${payload}" pid)" ]; then
-      printf '%s' "${payload}"
-      exit 0
-    fi
-  done
+  payload="$(curl -fsS --max-time 2 "${REST_URL}/api/v1/status" 2>/dev/null || true)"
+  if [ -n "${payload}" ] && [ -n "$(json_value "${payload}" pid)" ]; then
+    printf '%s' "${payload}"
+  fi
   return 0
 }
 
-find_unverified_live_daemon() {
-  local vault_json="" vault_path="" pid_file="" pid="" emitted=""
-  if command -v marginalia >/dev/null 2>&1; then
-    vault_json="$(marginalia vault list --json 2>/dev/null || true)"
+legacy_vault_paths() {
+  local payload="" config=""
+  if [ -n "${PREVIOUS_COMMAND}" ] && [ -x "${PREVIOUS_COMMAND}" ]; then
+    payload="$("${PREVIOUS_COMMAND}" vault list --json 2>/dev/null || true)"
   fi
-
-  {
-    if [ -n "${vault_json}" ]; then
-      printf '%s' "${vault_json}" | "${VERIFY_PYTHON}" -c \
-        'import json,sys; [print(v.get("path", "")) for v in json.load(sys.stdin).get("vaults", [])]' \
-        2>/dev/null || true
-    fi
-    for pid_file in "${HOME_ROOT}"/vaults/*/.marginalia/server.pid; do
-      [ -f "${pid_file}" ] && dirname "$(dirname "${pid_file}")"
-    done
-    pid_file="${HOME_ROOT}/runtime/.marginalia/server.pid"
-    [ -f "${pid_file}" ] && printf '%s\n' "${HOME_ROOT}/runtime"
-    true
-  } | while IFS= read -r vault_path; do
-    [ -z "${emitted}" ] || continue
-    [ -n "${vault_path}" ] || continue
-    pid_file="${vault_path}/.marginalia/server.pid"
-    [ -f "${pid_file}" ] || continue
-    pid="$(read_server_pid "${pid_file}")"
-    case "${pid}" in ''|*[!0-9]*) continue ;; esac
-    if kill -0 "${pid}" 2>/dev/null; then
-      "${VERIFY_PYTHON}" -c \
-        'import json,sys; print(json.dumps({"pid": int(sys.argv[1]), "vault_path": sys.argv[2]}))' \
-        "${pid}" "${vault_path}"
-      emitted="1"
-    fi
+  if [ -n "${payload}" ]; then
+    printf '%s' "${payload}" | "${VERIFY_PYTHON}" -c '
+import json, sys
+try:
+    payload = json.load(sys.stdin)
+except (TypeError, ValueError):
+    raise SystemExit(0)
+for row in payload.get("vaults", []):
+    path = row.get("path") if isinstance(row, dict) else None
+    if isinstance(path, str) and path and "\n" not in path and "\r" not in path:
+        print(path)
+' 2>/dev/null || true
+  fi
+  for config in "${HOME_ROOT}"/vaults/*/marginalia.yaml; do
+    [ -f "${config}" ] || continue
+    dirname "${config}"
   done
 }
 
+find_unverified_live_legacy_daemon() {
+  local vault="" pid=""
+  while IFS= read -r vault; do
+    [ -n "${vault}" ] || continue
+    pid="$(read_server_pid "${vault}/.marginalia/server.pid")"
+    case "${pid}" in ''|*[!0-9]*) continue ;; esac
+    if kill -0 "${pid}" 2>/dev/null; then
+      "${VERIFY_PYTHON}" -c \
+        'import json,sys; print(json.dumps({"pid": int(sys.argv[1]), "vault": sys.argv[2]}))' \
+        "${pid}" "${vault}"
+      return 0
+    fi
+  done < <(legacy_vault_paths | sort -u)
+}
+
+find_verified_legacy_lock_root() {
+  local target_pid="$1" vault="$2" recorded_pid=""
+  [ -n "${vault}" ] && [ -f "${vault}/marginalia.yaml" ] || return 1
+  recorded_pid="$(read_server_pid "${vault}/.marginalia/server.pid")"
+  [ "${recorded_pid}" = "${target_pid}" ] || return 1
+  printf '%s' "${vault}"
+}
+
+find_unverified_live_daemon() {
+  local pid=""
+  [ -f "${DAEMON_PID_FILE}" ] || return 0
+  pid="$(read_server_pid "${DAEMON_PID_FILE}")"
+  case "${pid}" in ''|*[!0-9]*) return 0 ;; esac
+  if kill -0 "${pid}" 2>/dev/null; then
+    "${VERIFY_PYTHON}" -c \
+      'import json,sys; print(json.dumps({"pid": int(sys.argv[1])}))' "${pid}"
+  fi
+}
+
 UPGRADE=""
-RESTART_VAULT=""
 OLD_PID=""
+PREVIOUS_COMMAND="$(command -v marginalia 2>/dev/null || true)"
+if [ -x "${TOOL_ROOT}/marginalia/bin/python" ]; then
+  PREVIOUS_VERSION="$("${TOOL_ROOT}/marginalia/bin/python" -c \
+    'import importlib.metadata; print(importlib.metadata.version("marginalia"))' \
+    2>/dev/null || true)"
+fi
 STATUS_JSON="$(discover_daemon_status)"
 if [ -z "${STATUS_JSON}" ]; then
   UNVERIFIED_DAEMON="$(find_unverified_live_daemon)"
   if [ -n "${UNVERIFIED_DAEMON}" ]; then
     UNVERIFIED_PID="$(json_value "${UNVERIFIED_DAEMON}" pid)"
-    UNVERIFIED_VAULT="$(json_value "${UNVERIFIED_DAEMON}" vault_path)"
-    if [ "${UNVERIFIED_VAULT}" = "${HOME_ROOT}/runtime" ]; then
-      STOP_COMMAND="marginalia stop"
-    else
-      QUOTED_VAULT="$("${VERIFY_PYTHON}" -c \
-        'import shlex,sys; print(shlex.quote(sys.argv[1]))' "${UNVERIFIED_VAULT}")"
-      STOP_COMMAND="marginalia stop --vault ${QUOTED_VAULT}"
+      die "live Marginalia daemon (pid ${UNVERIFIED_PID}) has an application PID record at ${DAEMON_PID_FILE}, but status at ${REST_URL} is unavailable; update aborted before replacing the installed tool. Stop it first: marginalia stop. If it uses custom ports, stop it manually and rerun."
+  fi
+  if [ "${PREVIOUS_VERSION}" = "0.0.40" ]; then
+    UNVERIFIED_LEGACY_DAEMON="$(find_unverified_live_legacy_daemon)"
+    if [ -n "${UNVERIFIED_LEGACY_DAEMON}" ]; then
+      UNVERIFIED_PID="$(json_value "${UNVERIFIED_LEGACY_DAEMON}" pid)"
+      UNVERIFIED_VAULT="$(json_value "${UNVERIFIED_LEGACY_DAEMON}" vault)"
+      die "live Marginalia 0.0.40 daemon (pid ${UNVERIFIED_PID}) has a vault-scoped PID record at ${UNVERIFIED_VAULT}/.marginalia/server.pid, but verified status at ${REST_URL} is unavailable; update aborted before replacing the installed tool. Stop it first: marginalia stop --vault \"${UNVERIFIED_VAULT}\", then rerun the installer."
     fi
-    die "live Marginalia daemon (pid ${UNVERIFIED_PID}) has a PID record at ${UNVERIFIED_VAULT}, but authenticated status at ${REST_URL} is unavailable; update aborted before replacing the installed tool. Stop it first: ${STOP_COMMAND}. If it uses a custom endpoint or ports, stop it manually and rerun."
   fi
 fi
 if [ -n "${STATUS_JSON}" ]; then
   UPGRADE="1"
   WAS_RUNNING="1"
-  RESTART_VAULT="$(json_value "${STATUS_JSON}" vault_path)"
   OLD_PID="$(json_value "${STATUS_JSON}" pid)"
   STATUS_ENDPOINT="$(json_value "${STATUS_JSON}" endpoint)"
-  OLD_LOCK_ROOT="$(find_daemon_lock_root "${OLD_PID}" "${RESTART_VAULT}" || true)"
-  [ -n "${OLD_LOCK_ROOT}" ] \
-    || die "authenticated daemon status reported pid ${OLD_PID}, but its lifecycle lock could not be found; update aborted before shutdown"
+  STATUS_VERSION="$(json_value "${STATUS_JSON}" marginalia_version)"
+  OLD_LOCK_ROOT="$(find_daemon_lock_root "${OLD_PID}" || true)"
+  if [ -z "${OLD_LOCK_ROOT}" ]; then
+    STATUS_VAULT="$(json_value "${STATUS_JSON}" vault_path)"
+    if [ "${PREVIOUS_VERSION}" != "0.0.40" ] \
+      || [ "${STATUS_VERSION}" != "0.0.40" ]; then
+      die "Marginalia status reported pid ${OLD_PID}, but its application lifecycle lock could not be verified; update aborted before shutdown"
+    fi
+    OLD_LOCK_ROOT="$(find_verified_legacy_lock_root "${OLD_PID}" "${STATUS_VAULT}" || true)"
+    [ -n "${OLD_LOCK_ROOT}" ] \
+      || die "Marginalia 0.0.40 status reported pid ${OLD_PID} and vault ${STATUS_VAULT:-unknown}, but the matching vault-scoped lifecycle lock could not be verified; update aborted before shutdown"
+    LEGACY_DAEMON="1"
+    PREVIOUS_DAEMON_VAULT="${STATUS_VAULT}"
+  fi
   case "${STATUS_ENDPOINT%/}" in
     ""|"${REST_URL}"|"http://localhost:7777") ;;
     *)
-      QUOTED_LOCK_ROOT="$("${VERIFY_PYTHON}" -c \
-        'import shlex,sys; print(shlex.quote(sys.argv[1]))' "${OLD_LOCK_ROOT}")"
-      die "live Marginalia daemon uses custom endpoint ${STATUS_ENDPOINT}; update aborted before shutdown because the installer cannot preserve custom ports automatically. Stop it first: marginalia stop --vault ${QUOTED_LOCK_ROOT}"
+      if [ -n "${LEGACY_DAEMON}" ]; then
+        die "live Marginalia 0.0.40 daemon uses custom endpoint ${STATUS_ENDPOINT}; update aborted before shutdown because the installer cannot preserve custom ports automatically. Stop it first: marginalia stop --vault \"${PREVIOUS_DAEMON_VAULT}\""
+      fi
+      die "live Marginalia daemon uses custom endpoint ${STATUS_ENDPOINT}; update aborted before shutdown because the installer cannot preserve custom ports automatically. Stop it first: marginalia stop"
       ;;
   esac
-  ROLLBACK_VAULT="${RESTART_VAULT}"
   step "Existing Marginalia daemon detected — updating in place"
-  info "active vault: ${RESTART_VAULT:-unknown}"
-  PREVIOUS_COMMAND="$(command -v marginalia 2>/dev/null || true)"
-  if [ -x "${TOOL_ROOT}/marginalia/bin/python" ]; then
-    PREVIOUS_VERSION="$("${TOOL_ROOT}/marginalia/bin/python" -c \
-      'import importlib.metadata; print(importlib.metadata.version("marginalia"))' \
-      2>/dev/null || true)"
-  fi
-  [ -n "${RESTART_VAULT}" ] \
-    || die "authenticated daemon status did not identify its active vault; update aborted"
   [ -n "${PREVIOUS_COMMAND}" ] \
     || die "daemon is running but its installed marginalia command was not found"
   # From this point every exit path must leave the unchanged prior daemon
   # running until activation has a restorable tool backup.
   SHUTDOWN_REQUESTED="1"
-  if ! "${STAGE_CLI}" stop --vault "${OLD_LOCK_ROOT}" --timeout 30; then
+  if [ -n "${LEGACY_DAEMON}" ]; then
+    STOP_COMMAND=("${STAGE_CLI}" stop --vault "${PREVIOUS_DAEMON_VAULT}" --timeout 30)
+  else
+    STOP_COMMAND=("${STAGE_CLI}" stop --timeout 30)
+  fi
+  if ! "${STOP_COMMAND[@]}"; then
     die "could not stop the verified daemon (pid ${OLD_PID}); update aborted before replacing the installed tool"
   fi
 
@@ -637,8 +696,9 @@ if [ -n "${STATUS_JSON}" ]; then
   fi
   info "stopped the running daemon — it will restart on the new version below"
 elif port_in_use; then
-  die "port 7777 is in use but authenticated Marginalia status is unavailable; update aborted"
-elif ls "${HOME_ROOT}/vaults"/*/marginalia.yaml >/dev/null 2>&1; then
+  die "port 7777 is in use but verified Marginalia status is unavailable; update aborted"
+elif [ -x "${TOOL_ROOT}/marginalia/bin/python" ] \
+  || ls "${HOME_ROOT}/vaults"/*/marginalia.yaml >/dev/null 2>&1; then
   # Daemon isn't up (crashed, machine rebooted, whatever) but this machine was
   # already set up before — a re-run should update in place, not treat this
   # as a fresh install and re-run vault-create/onboard against existing state.
@@ -694,17 +754,13 @@ if [ -n "${CLI_VERSION}" ] && [ "${CLI_VERSION}" != "marginalia ${INSTALLED_VERS
 fi
 info "version: ${INSTALLED_VERSION}"
 
-# Upgrade path but health check never told us which vault was active (daemon
-# wasn't running when we checked) — ask the CLI's own notion of "current".
-if [ -n "${UPGRADE}" ] && [ -z "${RESTART_VAULT}" ]; then
-  RESTART_VAULT="$(marginalia vault current 2>/dev/null || true)"
-fi
-
 if [ -n "${UPGRADE}" ]; then
   # Update path: the machine is already set up — don't create vaults, don't
-  # touch the default, don't re-prompt for an LLM. Just reinstall (done) and
-  # restart the vault that was running (below).
+  # touch the default, and don't re-prompt for an LLM.
   step "Update mode — leaving your vaults, default, and LLM config untouched"
+elif [ -z "${VAULT}" ]; then
+  step "Application-first setup"
+  info "no vault preseed requested; create, select, and configure vaults in the Web UI"
 else
 
 # ── 4. vault ──────────────────────────────────────────────────────────────
@@ -759,33 +815,14 @@ else
   info "choose a provider (or pick Skip — explore() works without an LLM)."
   "${ONBOARD[@]}" < /dev/tty
 fi
-fi  # end fresh-install (vault + LLM) block
+fi  # end update / application-first / explicit-preseed setup
 
-# Which vault the daemon should (re)open, and its short label for URLs.
-SERVE_VAULT="${VAULT}"
-VAULT_LABEL="${VAULT}"
-TOKEN_VAULT="${VAULT_DIR}"
-if [ -n "${UPGRADE}" ] && [ -n "${RESTART_VAULT}" ]; then
-  SERVE_VAULT="${RESTART_VAULT}"
-  VAULT_LABEL="$(basename "${RESTART_VAULT}")"
-  TOKEN_VAULT="${RESTART_VAULT}"
-fi
-ROLLBACK_VAULT="${TOKEN_VAULT}"
-
-authenticated_server_version() {
-  local token_file="$1" cli="$2" token="" payload="" version=""
-  [ -f "${token_file}" ] || return 1
-  IFS= read -r token < "${token_file}" || true
-  [ -n "${token}" ] || return 1
-  payload="$(MARGINALIA_AUTH_TOKEN="${token}" "${cli}" status \
-    --vault "${TOKEN_VAULT}" --json --timeout 2 \
-    2>/dev/null || true)"
+server_version() {
+  local cli="$1" payload="" version=""
+  payload="$("${cli}" status --json --timeout 2 2>/dev/null || true)"
   version="$(json_value "${payload}" marginalia_version)"
   if [ -z "${version}" ]; then
-    # Migration fallback for v0.0.39, which has capability auth but predates
-    # the status command. The credential is still explicit; no public detail is parsed.
-    payload="$(authenticated_get "${token}" "${REST_URL}/version" \
-      2>/dev/null || true)"
+    payload="$(curl -fsS --max-time 2 "${REST_URL}/version" 2>/dev/null || true)"
     version="$(json_value "${payload}" marginalia_version)"
   fi
   [ -n "${version}" ] || return 1
@@ -805,7 +842,7 @@ elif [ -n "${UPGRADE}" ] && [ -z "${WAS_RUNNING}" ]; then
   info "the daemon was stopped before this update, so it remains stopped"
 else
   if [ -n "${UPGRADE}" ]; then
-    step "Restarting the daemon on the new version (vault: ${VAULT_LABEL})"
+    step "Restarting the application daemon on the new version"
   else
     step "Starting the Marginalia daemon (UI/REST :7777 + MCP :8201)"
   fi
@@ -816,15 +853,14 @@ else
   # name onboard recorded. (A keyless *remote* embedding endpoint is not covered
   # here; the default fastembed embedder is local and needs no key.)
   CANDIDATE_DAEMON_STARTED="1"
-  if ! marginalia serve --daemon --vault "${SERVE_VAULT}"; then
+  if ! marginalia serve --daemon --no-open; then
     SERVE_OK=""
     warn "daemon start command failed"
   else
     info "waiting for server version ${INSTALLED_VERSION} ..."
     SERVER_VERSION=""
     for _ in $(seq 1 60); do
-      SERVER_VERSION="$(authenticated_server_version \
-        "${TOKEN_VAULT}/.marginalia/daemon.token" "${TOOL_BIN}/marginalia" || true)"
+      SERVER_VERSION="$(server_version "${TOOL_BIN}/marginalia" || true)"
       [ "${SERVER_VERSION}" = "${INSTALLED_VERSION}" ] && break
       sleep 1
     done
@@ -838,7 +874,7 @@ else
       else
         warn "server did not become ready within 60s"
       fi
-      warn "try 'marginalia serve --foreground --vault ${SERVE_VAULT}'"
+      warn "try 'marginalia serve --foreground --no-open'"
       warn "daemon log: ${DAEMON_LOG}"
     fi
   fi
@@ -860,10 +896,10 @@ rm -rf "${BACKUP_ROOT}"
 BACKUP_ROOT=""
 
 # ── 7. wire Claude Code ───────────────────────────────────────────────────
-# MCP shares the daemon capability-token gate. Register the private token as a
+# MCP alone retains the daemon capability-token gate. Register the private token as a
 # Bearer header without printing it to installer output.
 GLOBAL_URL="${MCP_URL}"
-TOKEN_FILE="${TOKEN_VAULT}/.marginalia/daemon.token"
+TOKEN_FILE="${DAEMON_TOKEN_FILE}"
 AUTH_TOKEN=""
 if [ -f "${TOKEN_FILE}" ]; then
   IFS= read -r AUTH_TOKEN < "${TOKEN_FILE}" || true
@@ -876,7 +912,7 @@ elif [ -z "${AUTH_TOKEN}" ]; then
   info "start the daemon, then re-run this installer to register its authenticated MCP endpoint"
 elif command -v claude >/dev/null 2>&1; then
   step "Registering the authenticated MCP server with Claude Code (user scope)"
-  # v0.0.40 reuses the vault credential across daemon restarts. Preserve an
+  # Marginalia reuses the application credential across daemon restarts. Preserve an
   # existing user registration instead of deleting a working integration before
   # its replacement is proven. A fresh registration still uses Claude's only
   # documented HTTP-header input surface.
@@ -903,7 +939,7 @@ elif command -v claude >/dev/null 2>&1; then
       die "Claude MCP registration was added but did not verify as a connected user-scope endpoint"
     fi
     MCP_WIRED="1"
-    info "registered and verified 'marginalia' for the active vault"
+    info "registered and verified the app-scoped 'marginalia' MCP endpoint"
   else
     warn "automatic Claude Code registration failed"
   fi
@@ -912,12 +948,22 @@ else
   info "install Claude Code, then re-run this installer to register Marginalia"
 fi
 
+# The daemon itself stays headless while the installer proves the exact version.
+# Only the committed, verified application is allowed to launch a browser.
+if [ -n "${SERVER_STARTED}" ] && [ "${MARGINALIA_NO_OPEN:-}" != "1" ]; then
+  step "Opening the verified Marginalia application"
+  if open_application_ui "${REST_URL}/"; then
+    info "opened ${REST_URL}/"
+  else
+    warn "browser launch is unavailable; open ${REST_URL}/"
+  fi
+fi
+
 # ── done ──────────────────────────────────────────────────────────────────
 if [ -z "${SERVE_OK}" ]; then
   printf "\n%sMarginalia %s installed, but the daemon did not start correctly.%s\n" \
     "$Y" "${INSTALLED_VERSION}" "$X"
-  info "vault    : ${SERVE_VAULT}"
-  info "start manually: marginalia serve --foreground --vault ${SERVE_VAULT}"
+  info "start manually: marginalia serve --foreground"
   info "log      : ${DAEMON_LOG}"
   exit 1
 fi
@@ -934,14 +980,18 @@ else
   printf "\n%sMarginalia %s installed; daemon was not started.%s\n" \
     "$B$G" "${INSTALLED_VERSION}" "$X"
 fi
-info "vault    : ${SERVE_VAULT}"
+if [ -n "${VAULT_DIR}" ]; then
+  info "preseed vault: ${VAULT_DIR} (managed independently from the daemon)"
+else
+  info "vaults   : create and manage them in the Web UI"
+fi
 if [ -n "${SERVER_STARTED}" ]; then
-  info "web UI   : marginalia ui"
-  info "stop     : marginalia stop --vault \"${TOKEN_VAULT}\""
+  info "web UI   : ${REST_URL}/"
+  info "stop     : marginalia stop"
   if [ -n "${MCP_WIRED}" ]; then
     info "Claude MCP: authenticated user-scope connection registered"
   fi
 else
-  info "start    : marginalia serve --daemon --vault ${SERVE_VAULT}"
+  info "start    : marginalia serve --daemon"
 fi
 info "update   : re-run this installer"

@@ -13,7 +13,7 @@ INSTALL_URL="${MARGINALIA_INSTALL_URL:-$DEFAULT_URL}"
 TEST_HOME="${MARGINALIA_TEST_HOME:-}"
 ORIGINAL_HOME="${HOME:-}"
 VAULT="${MARGINALIA_VAULT:-mynotes}"
-EXPECTED_VERSION="${MARGINALIA_EXPECTED_VERSION:-0.0.40}"
+EXPECTED_VERSION="${MARGINALIA_EXPECTED_VERSION:-0.0.41}"
 PROVIDER="${MARGINALIA_LLM_PROVIDER:-}"
 API_BASE="${MARGINALIA_LLM_API_BASE:-}"
 MODEL="${MARGINALIA_LLM_MODEL:-}"
@@ -228,7 +228,7 @@ sha256_file() {
 }
 
 prepare_release_provenance() {
-  local script_path tmp_driver tmp_install tmp_manifest pinned_install
+  local script_path tmp_driver tmp_install tmp_manifest pinned_install manifest_version
   script_path="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
   DRIVER_SHA256="$(sha256_file "$script_path")"
   if [ -n "$DRIVER_COMMIT" ]; then
@@ -260,6 +260,11 @@ prepare_release_provenance() {
   curl -fsSL "$MANIFEST_URL" -o "$tmp_manifest"
   INSTALL_SHA256="$(sha256_file "$tmp_install")"
   MANIFEST_SHA256="$(sha256_file "$tmp_manifest")"
+  manifest_version="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["version"])' "$tmp_manifest")"
+  if [ -n "$EXPECTED_VERSION" ] && [ "$EXPECTED_VERSION" != "$manifest_version" ]; then
+    die "pinned release manifest version $manifest_version does not match $EXPECTED_VERSION"
+  fi
+  EXPECTED_VERSION="$manifest_version"
   rm -f "${tmp_driver:-}" "$tmp_install" "$tmp_manifest"
   trap - RETURN
 }
@@ -357,19 +362,16 @@ prepare_home() {
 }
 
 stop_marginalia_in_home() {
-  local home="$1" vault_dir pid_file raw pid parser size
+  local home="$1" pid_file raw pid parser size
   local tool_bin="$home/.local/bin"
   if [ -x "$tool_bin/marginalia" ]; then
-    for vault_dir in "$home"/.marginalia/vaults/*; do
-      [ -d "$vault_dir" ] || continue
-      HOME="$home" \
-      XDG_DATA_HOME="$home/.local/share" \
-      XDG_CACHE_HOME="$home/.cache" \
-      XDG_CONFIG_HOME="$home/.config" \
-      UV_CACHE_DIR="$home/.cache/uv" \
-      PATH="$tool_bin:$PATH" \
-        "$tool_bin/marginalia" stop --vault "$vault_dir" >/dev/null 2>&1 || true
-    done
+    HOME="$home" \
+    XDG_DATA_HOME="$home/.local/share" \
+    XDG_CACHE_HOME="$home/.cache" \
+    XDG_CONFIG_HOME="$home/.config" \
+    UV_CACHE_DIR="$home/.cache/uv" \
+    PATH="$tool_bin:$PATH" \
+      "$tool_bin/marginalia" stop >/dev/null 2>&1 || true
   fi
   while IFS= read -r pid_file; do
     [ -r "$pid_file" ] \
@@ -605,6 +607,7 @@ export XDG_CACHE_HOME="$HOME/.cache"
 export XDG_CONFIG_HOME="$HOME/.config"
 export UV_CACHE_DIR="$HOME/.cache/uv"
 export MARGINALIA_NO_MCP=1
+export MARGINALIA_NO_OPEN=1
 # HOME is redirected here but never let a sandbox run persist PATH via
 # uv tool update-shell regardless.
 export MARGINALIA_NO_UPDATE_SHELL=1
@@ -716,7 +719,7 @@ case "$PROFILE" in
     grep -q 'enabled: false' "$YAML"
     ;;
 esac
-marginalia stop --vault "$VAULT" >/dev/null 2>&1 || true
+marginalia stop >/dev/null 2>&1 || true
 echo MAC_TMUX_HUMAN_INSTALL_OK
 RUNNER
   chmod +x "$runner"
@@ -907,19 +910,16 @@ wait_for_daemon_stopped() {
 }
 
 verify_default_daemon() {
-  local status token html ui_output
+  local status html ui_output
   wait_for_health "http://127.0.0.1:7777"
-  status="$(marginalia status --vault "$VAULT" --json --timeout 5)"
+  status="$(marginalia status --json --timeout 5)"
   [ "$(json_field "$status" marginalia_version)" = "$EXPECTED_VERSION" ]
   [ "$(json_field "$status" endpoint)" = "http://127.0.0.1:7777" ]
-  token="$(head -n 1 "$HOME/.marginalia/vaults/$VAULT/.marginalia/daemon.token")"
-  [ -n "$token" ]
-  html="$(printf 'header = "Authorization: Bearer %s"\n' "$token" \
-    | curl -fsS --config - http://127.0.0.1:7777/)"
+  html="$(curl -fsS http://127.0.0.1:7777/)"
   printf '%s' "$html" | grep -Eiq '<!doctype html|<html'
-  ui_output="$(marginalia ui --no-open --vault "$VAULT")"
+  ui_output="$(marginalia ui --no-open)"
   [ "$ui_output" = \
-    "Authenticated Marginalia UI is ready at http://127.0.0.1:7777; browser launch skipped" ]
+    "Marginalia UI is ready at http://127.0.0.1:7777/; browser launch skipped" ]
   printf '%s\n' "$ui_output" >&2
   printf '%s' "$status"
 }
@@ -928,23 +928,165 @@ run_raw_installer() {
   curl -fsSL "$INSTALL_URL" | bash
 }
 
+run_predecessor_migration() (
+  set -euo pipefail
+  local predecessor_commit predecessor_install_url predecessor_manifest_url
+  local predecessor_install_sha predecessor_manifest_sha migration_home legacy_vault
+  local predecessor_install predecessor_manifest status old_pid rollback_pid migrated_pid
+  local legacy_pid_file legacy_token_file app_pid_file app_token_file token_sha sentinel
+  local sentinel_sha real_uv rollback_output migration_output successor_version successor_manifest
+
+  predecessor_commit="19847892b7e129225011d21d6d1f2ce00f996458"
+  predecessor_install_url="https://raw.githubusercontent.com/OktoLabsAI/marginalia-dist/${predecessor_commit}/install.sh"
+  predecessor_manifest_url="https://raw.githubusercontent.com/OktoLabsAI/marginalia-dist/${predecessor_commit}/release-manifest.json"
+  predecessor_install_sha="55127f6a3ef35e7b0ae9bc0aeb506dc3c51b6695d9dfb759f73dd018b8870866"
+  predecessor_manifest_sha="619d45919b506757442b758a4898e865e5600c7da12d8c83677bb3080414c5d8"
+  migration_home="/tmp/marginalia-predecessor-migration"
+  legacy_vault="${migration_home}/.marginalia/vaults/legacy-vault"
+  predecessor_install="${migration_home}/predecessor-install.sh"
+  predecessor_manifest="${migration_home}/predecessor-manifest.json"
+  successor_version="$EXPECTED_VERSION"
+  successor_manifest="$MANIFEST_URL"
+
+  rm -rf "$migration_home"
+  mkdir -p "$migration_home/tmp"
+  export HOME="$migration_home"
+  export XDG_DATA_HOME="$HOME/.local/share"
+  export XDG_CACHE_HOME="$HOME/.cache"
+  export XDG_CONFIG_HOME="$HOME/.config"
+  export UV_TOOL_DIR="$HOME/.local/share/uv/tools"
+  export UV_TOOL_BIN_DIR="$HOME/.local/bin"
+  export UV_PYTHON_INSTALL_DIR="$HOME/.local/share/uv/python"
+  export UV_CACHE_DIR="$HOME/.cache/uv"
+  export TMPDIR="$HOME/tmp"
+  export PATH="$HOME/.local/bin:$PATH"
+  export MARGINALIA_NO_MCP=1
+  export MARGINALIA_NO_OPEN=1
+  export MARGINALIA_NO_UPDATE_SHELL=1
+  export MARGINALIA_VAULT=legacy-vault
+  export MARGINALIA_ONBOARD_NONINTERACTIVE=1
+  export MARGINALIA_LLM_PROVIDER=skip
+  export MARGINALIA_EXPECTED_VERSION=0.0.40
+  export MARGINALIA_MANIFEST="$predecessor_manifest_url"
+  export MARGINALIA_DEFAULT_MANIFEST_URL="$predecessor_manifest_url"
+  cleanup_predecessor_migration() {
+    local cli="$HOME/.local/bin/marginalia"
+    [ -x "$cli" ] || return 0
+    "$cli" stop --timeout 10 >/dev/null 2>&1 || true
+    "$cli" stop --vault "$legacy_vault" --timeout 10 >/dev/null 2>&1 || true
+  }
+  trap cleanup_predecessor_migration EXIT
+
+  curl -fsSL "$predecessor_install_url" -o "$predecessor_install"
+  curl -fsSL "$predecessor_manifest_url" -o "$predecessor_manifest"
+  [ "$(sha256sum "$predecessor_install" | awk '{print $1}')" = "$predecessor_install_sha" ]
+  [ "$(sha256sum "$predecessor_manifest" | awk '{print $1}')" = "$predecessor_manifest_sha" ]
+  printf 'PREDECESSOR_COMMIT=%s\nPREDECESSOR_INSTALL_URL=%s\nPREDECESSOR_INSTALL_SHA256=%s\n' \
+    "$predecessor_commit" "$predecessor_install_url" "$predecessor_install_sha"
+  printf 'PREDECESSOR_MANIFEST_URL=%s\nPREDECESSOR_MANIFEST_SHA256=%s\n' \
+    "$predecessor_manifest_url" "$predecessor_manifest_sha"
+  bash "$predecessor_install"
+  if [ "${MARGINALIA_TEST_FAIL_PREDECESSOR_BEFORE_STATUS:-}" = 1 ]; then
+    echo "forced predecessor failure before status" >&2
+    return 88
+  fi
+
+  export PATH="$HOME/.local/bin:$PATH"
+  legacy_pid_file="$legacy_vault/.marginalia/server.pid"
+  legacy_token_file="$legacy_vault/.marginalia/daemon.token"
+  for _ in $(seq 1 90); do
+    status="$(marginalia status --vault "$legacy_vault" --json --timeout 5 2>/dev/null || true)"
+    [ "$(json_field "$status" marginalia_version 2>/dev/null || true)" = "0.0.40" ] && break
+    sleep 1
+  done
+  [ "$(json_field "$status" marginalia_version)" = "0.0.40" ]
+  old_pid="$(json_field "$status" pid)"
+  [ -n "$old_pid" ] && kill -0 "$old_pid"
+  [ -f "$legacy_pid_file" ]
+  [ -s "$legacy_token_file" ]
+  token_sha="$(sha256sum "$legacy_token_file" | awk '{print $1}')"
+  sentinel="$(uv tool dir)/marginalia/.predecessor-v0040-sentinel"
+  printf 'immutable-predecessor:0.0.40\n' > "$sentinel"
+  sentinel_sha="$(sha256sum "$sentinel" | awk '{print $1}')"
+  echo RELEASE_LIFECYCLE_PREDECESSOR_RUNNING_OK
+
+  export MARGINALIA_EXPECTED_VERSION="$successor_version"
+  export MARGINALIA_MANIFEST="$successor_manifest"
+  export MARGINALIA_DEFAULT_MANIFEST_URL="$successor_manifest"
+  real_uv="$(command -v uv)"
+  uv() {
+    if [ "${MARGINALIA_FAIL_ACTIVATION:-}" = "1" ] \
+       && [ "${1:-}" = "tool" ] && [ "${2:-}" = "install" ]; then
+      return 77
+    fi
+    "$REAL_UV" "$@"
+  }
+  export -f uv
+  export REAL_UV="$real_uv"
+  export MARGINALIA_FAIL_ACTIVATION=1
+  rollback_output="$HOME/predecessor-rollback.out"
+  if run_raw_installer >"$rollback_output" 2>&1; then
+    echo "forced successor activation failure unexpectedly succeeded" >&2
+    return 87
+  fi
+  unset MARGINALIA_FAIL_ACTIVATION
+  unset -f uv
+  cat "$rollback_output"
+  grep -Fq 'candidate activation failed' "$rollback_output"
+  grep -Fq 'restored and restarted Marginalia 0.0.40' "$rollback_output"
+  [ "$(marginalia --version)" = "marginalia 0.0.40" ]
+  [ -f "$sentinel" ]
+  [ "$(sha256sum "$sentinel" | awk '{print $1}')" = "$sentinel_sha" ]
+  [ "$(sha256sum "$legacy_token_file" | awk '{print $1}')" = "$token_sha" ]
+  status="$(marginalia status --vault "$legacy_vault" --json --timeout 5)"
+  rollback_pid="$(json_field "$status" pid)"
+  [ "$(json_field "$status" marginalia_version)" = "0.0.40" ]
+  [ -n "$rollback_pid" ] && [ "$rollback_pid" != "$old_pid" ] && kill -0 "$rollback_pid"
+  [ -f "$legacy_pid_file" ]
+  echo RELEASE_LIFECYCLE_PREDECESSOR_ROLLBACK_OK
+
+  migration_output="$HOME/predecessor-migration.out"
+  run_raw_installer >"$migration_output" 2>&1
+  cat "$migration_output"
+  status="$(verify_default_daemon)"
+  migrated_pid="$(json_field "$status" pid)"
+  [ -n "$migrated_pid" ] && [ "$migrated_pid" != "$rollback_pid" ] && kill -0 "$migrated_pid"
+  app_pid_file="$HOME/.marginalia/runtime/.marginalia/server.pid"
+  app_token_file="$HOME/.marginalia/daemon-7777.token"
+  [ -f "$app_pid_file" ]
+  [ ! -e "$legacy_pid_file" ]
+  [ -s "$app_token_file" ]
+  [ "$(sha256sum "$app_token_file" | awk '{print $1}')" = "$token_sha" ]
+  [ "$(sha256sum "$legacy_token_file" | awk '{print $1}')" = "$token_sha" ]
+  [ ! -e "$sentinel" ]
+  marginalia stop
+  wait_for_daemon_stopped "$migrated_pid" 7777 8201
+  echo RELEASE_LIFECYCLE_PREDECESSOR_MIGRATION_OK
+)
+
 run_release_lifecycle() {
   local status fresh_pid stopped_output running_before running_after custom_status custom_pid
-  local custom_output guard_vault guard_pid guard_output rollback_before rollback_after
+  local custom_output guard_runtime guard_pid guard_output rollback_before rollback_after
   local rollback_output config_sha tool_root real_uv rollback_sentinel
   local rollback_sentinel_sha token_file initial_token
 
   status="$(verify_default_daemon)"
   fresh_pid="$(json_field "$status" pid)"
   [ -n "$fresh_pid" ]
-  token_file="$HOME/.marginalia/vaults/$VAULT/.marginalia/daemon.token"
+  [ "$(json_field "$status" vault_count)" = "0" ]
+  [ ! -d "$HOME/.marginalia/vaults/$VAULT" ]
+  echo RELEASE_LIFECYCLE_APP_FIRST_OK
+  marginalia vault create "$VAULT" --use
+  status="$(verify_default_daemon)"
+  [ "$(json_field "$status" vault_count)" = "1" ]
+  token_file="$HOME/.marginalia/daemon-7777.token"
   initial_token="$(cat "$token_file")"
   [ -n "$initial_token" ]
   echo RELEASE_LIFECYCLE_FRESH_INSTALL_OK
   echo RELEASE_LIFECYCLE_STATUS_UI_OK
 
   config_sha="$(sha256sum "$HOME/.marginalia/vaults/$VAULT/marginalia.yaml" | awk '{print $1}')"
-  marginalia stop --vault "$VAULT"
+  marginalia stop
   wait_for_daemon_stopped "$fresh_pid" 7777 8201 || return 81
   stopped_output="$HOME/stopped-update.out"
   run_raw_installer >"$stopped_output" 2>&1
@@ -955,7 +1097,7 @@ run_release_lifecycle() {
   [ "$(cat "$token_file")" = "$initial_token" ]
   echo RELEASE_LIFECYCLE_STOPPED_UPDATE_OK
 
-  marginalia serve --daemon --vault "$VAULT"
+  marginalia serve --daemon --no-open
   status="$(verify_default_daemon)"
   running_before="$(json_field "$status" pid)"
   run_raw_installer
@@ -972,12 +1114,12 @@ run_release_lifecycle() {
   rollback_sentinel_sha="$(sha256sum "$rollback_sentinel" | awk '{print $1}')"
   echo RELEASE_LIFECYCLE_RUNNING_UPDATE_OK
 
-  marginalia stop --vault "$VAULT"
+  marginalia stop
   wait_for_daemon_stopped "$running_after" 7777 8201
-  marginalia serve --daemon --vault "$VAULT" --port 7788 --mcp-port 8202
+  marginalia serve --daemon --no-open --port 7788 --mcp-port 8202
   wait_for_health "http://127.0.0.1:7788"
   custom_status="$(MARGINALIA_ENDPOINT=http://127.0.0.1:7788 \
-    marginalia status --vault "$VAULT" --json --timeout 5)"
+    marginalia status --json --timeout 5)"
   custom_pid="$(json_field "$custom_status" pid)"
   [ -n "$custom_pid" ]
   custom_output="$HOME/custom-port-refusal.out"
@@ -995,35 +1137,141 @@ run_release_lifecycle() {
   [ "$(cat "$token_file")" = "$initial_token" ]
   [ -f "$rollback_sentinel" ]
   [ "$(sha256sum "$rollback_sentinel" | awk '{print $1}')" = "$rollback_sentinel_sha" ]
-  MARGINALIA_ENDPOINT=http://127.0.0.1:7788 marginalia stop --vault "$VAULT"
+  MARGINALIA_ENDPOINT=http://127.0.0.1:7788 marginalia stop
   wait_for_daemon_stopped "$custom_pid" 7788 8202
   echo RELEASE_LIFECYCLE_CUSTOM_PORT_REFUSAL_OK
 
-  guard_vault="$HOME/.marginalia/vaults/release-pid-guard"
-  mkdir -p "$guard_vault/.marginalia"
-  sleep 300 &
-  guard_pid="$!"
-  printf '%s\n' "$guard_pid" > "$guard_vault/.marginalia/server.pid"
+  guard_runtime="$HOME/.marginalia/runtime"
   guard_output="$HOME/live-pid-refusal.out"
-  if run_raw_installer >"$guard_output" 2>&1; then
-    echo "installer accepted an unverified live PID record" >&2
-    return 84
-  fi
-  cat "$guard_output"
-  grep -Fq "live Marginalia daemon (pid $guard_pid)" "$guard_output"
-  grep -Fq "marginalia stop --vault $guard_vault" "$guard_output"
-  kill -0 "$guard_pid"
-  kill "$guard_pid"
-  wait "$guard_pid" 2>/dev/null || true
-  rm -rf "$guard_vault"
-  [ "$(marginalia --version)" = "marginalia $EXPECTED_VERSION" ]
-  [ "$(sha256sum "$HOME/.marginalia/vaults/$VAULT/marginalia.yaml" | awk '{print $1}')" = "$config_sha" ]
-  [ "$(cat "$token_file")" = "$initial_token" ]
-  [ -f "$rollback_sentinel" ]
-  [ "$(sha256sum "$rollback_sentinel" | awk '{print $1}')" = "$rollback_sentinel_sha" ]
+  (
+    set -euo pipefail
+    guard_python="${tool_root}/marginalia/bin/python"
+    guard_pid_file="$guard_runtime/.marginalia/server.pid"
+    guard_ready="$HOME/live-pid-refusal.ready"
+    guard_stop="$HOME/live-pid-refusal.stop"
+    guard_owner_log="$HOME/live-pid-refusal-owner.log"
+    guard_job_pid=""
+    guard_pid=""
+    cleanup_guard_owner() {
+      [ -n "${guard_job_pid:-}" ] || return 0
+      : > "$guard_stop"
+      for _ in $(seq 1 100); do
+        kill -0 "$guard_job_pid" >/dev/null 2>&1 || break
+        sleep 0.05
+      done
+      if kill -0 "$guard_job_pid" >/dev/null 2>&1; then
+        kill -KILL "$guard_job_pid" >/dev/null 2>&1 || true
+      fi
+      wait "$guard_job_pid" 2>/dev/null || true
+    }
+    trap cleanup_guard_owner EXIT
+    [ -x "$guard_python" ]
+    rm -f "$guard_ready" "$guard_stop"
+    "$guard_python" - "$guard_runtime" "$guard_ready" "$guard_stop" \
+      >"$guard_owner_log" 2>&1 <<'PY' &
+import os
+from pathlib import Path
+import sys
+import time
+
+from marginalia.server.lifecycle import PidFile
+
+runtime_root, ready_path, stop_path = map(Path, sys.argv[1:])
+with PidFile(runtime_root):
+    ready_path.write_text(f"{os.getpid()}\n", encoding="utf-8")
+    while not stop_path.exists():
+        time.sleep(0.05)
+PY
+    guard_job_pid=$!
+    for _ in $(seq 1 200); do
+      [ -s "$guard_ready" ] && break
+      if ! kill -0 "$guard_job_pid" >/dev/null 2>&1; then
+        wait "$guard_job_pid" 2>/dev/null || true
+        cat "$guard_owner_log" >&2
+        exit 84
+      fi
+      sleep 0.05
+    done
+    [ -s "$guard_ready" ]
+    IFS= read -r guard_pid < "$guard_ready"
+    [ "$guard_pid" = "$guard_job_pid" ]
+    validate_guard_record() {
+      "$guard_python" - "$guard_pid_file" "$guard_pid" <<'PY'
+import json
+from pathlib import Path
+import sys
+
+from marginalia.server import lifecycle
+
+path = Path(sys.argv[1])
+expected_pid = int(sys.argv[2])
+payload = json.loads(path.read_text(encoding="utf-8"))
+
+
+def fail(message: str) -> None:
+    raise SystemExit(f"invalid canonical PID record: {message}")
+
+
+if not isinstance(payload, dict):
+    fail("payload is not an object")
+if set(payload) != {"version", "pid", "start_token", "owner_id"}:
+    fail("payload keys do not match the canonical schema")
+if type(payload.get("version")) is not int:
+    fail("version is not an integer")
+if payload["version"] != lifecycle.PID_RECORD_VERSION:
+    fail("version does not match the installed lifecycle contract")
+if type(payload.get("pid")) is not int or payload["pid"] != expected_pid:
+    fail("pid does not match the live owner")
+if not isinstance(payload.get("start_token"), str) or not payload["start_token"]:
+    fail("start_token is missing")
+if not isinstance(payload.get("owner_id"), str) or not payload["owner_id"]:
+    fail("owner_id is missing")
+current_start = lifecycle._process_start_token(expected_pid)
+if current_start is None or payload["start_token"] != current_start:
+    fail("start_token does not match the live process birth identity")
+print(
+    "canonical application PID owner verified: "
+    f"version={payload['version']} pid={expected_pid}"
+)
+PY
+    }
+    validate_guard_record
+    guard_record_sha="$(sha256sum "$guard_pid_file" | awk '{print $1}')"
+    if run_raw_installer >"$guard_output" 2>&1; then
+      echo "installer accepted an unverified live PID record" >&2
+      exit 84
+    fi
+    cat "$guard_output"
+    grep -Fq "live Marginalia daemon (pid $guard_pid)" "$guard_output"
+    grep -Fq "marginalia stop" "$guard_output"
+    kill -0 "$guard_pid"
+    validate_guard_record
+    [ "$(sha256sum "$guard_pid_file" | awk '{print $1}')" = "$guard_record_sha" ]
+    [ "$(marginalia --version)" = "marginalia $EXPECTED_VERSION" ]
+    [ "$(sha256sum "$HOME/.marginalia/vaults/$VAULT/marginalia.yaml" | awk '{print $1}')" = "$config_sha" ]
+    [ "$(cat "$token_file")" = "$initial_token" ]
+    [ -f "$rollback_sentinel" ]
+    [ "$(sha256sum "$rollback_sentinel" | awk '{print $1}')" = "$rollback_sentinel_sha" ]
+    : > "$guard_stop"
+    for _ in $(seq 1 100); do
+      kill -0 "$guard_job_pid" >/dev/null 2>&1 || break
+      sleep 0.05
+    done
+    if kill -0 "$guard_job_pid" >/dev/null 2>&1; then
+      echo "canonical PID owner did not exit cleanly" >&2
+      cat "$guard_owner_log" >&2
+      exit 84
+    fi
+    wait "$guard_job_pid"
+    guard_job_pid=""
+    guard_pid=""
+    [ ! -e "$guard_pid_file" ]
+    rm -f "$guard_ready" "$guard_stop" "$guard_owner_log"
+    trap - EXIT
+  )
   echo RELEASE_LIFECYCLE_LIVE_PID_REFUSAL_OK
 
-  marginalia serve --daemon --vault "$VAULT"
+  marginalia serve --daemon --no-open
   status="$(verify_default_daemon)"
   rollback_before="$(json_field "$status" pid)"
   rollback_output="$HOME/activation-rollback.out"
@@ -1061,7 +1309,7 @@ run_release_lifecycle() {
   echo RELEASE_LIFECYCLE_PREVIOUS_TOOL_SENTINEL_OK
   echo RELEASE_LIFECYCLE_ACTIVATION_ROLLBACK_OK
 
-  marginalia stop --vault "$VAULT"
+  marginalia stop
   wait_for_daemon_stopped "$rollback_after" 7777 8201 || return 86
   [ "$(cat "$token_file")" = "$initial_token" ]
   echo RELEASE_LIFECYCLE_FINAL_STOP_OK
@@ -1069,10 +1317,11 @@ run_release_lifecycle() {
 }
 
 export MARGINALIA_NO_MCP=1
+export MARGINALIA_NO_OPEN=1
 # Ephemeral container, but stay consistent - never persist PATH via
 # uv tool update-shell in a sandbox run.
 export MARGINALIA_NO_UPDATE_SHELL=1
-export MARGINALIA_VAULT="$VAULT"
+[ "$PROFILE" != "release-lifecycle" ] && export MARGINALIA_VAULT="$VAULT"
 export MARGINALIA_EXPECTED_VERSION="$EXPECTED_VERSION"
 [ "$PROFILE" = "release-lifecycle" ] && export MARGINALIA_MANIFEST="$MANIFEST_URL"
 [ "$NO_SERVE" = "1" ] && export MARGINALIA_NO_SERVE=1
@@ -1100,6 +1349,7 @@ if [ "$PROFILE" = "release-lifecycle" ]; then
     "$DRIVER_COMMIT" "$DRIVER_URL" "$DRIVER_SHA256"
   printf 'INSTALL_URL=%s\nINSTALL_SHA256=%s\nMANIFEST_URL=%s\nMANIFEST_SHA256=%s\n' \
     "$INSTALL_URL" "$INSTALL_SHA256" "$MANIFEST_URL" "$MANIFEST_SHA256"
+  run_predecessor_migration
 fi
 printf 'PROFILE=%s\n' "$PROFILE"
 curl -fsSL "$INSTALL_URL" | bash
@@ -1108,7 +1358,9 @@ export PATH="$HOME/.local/bin:$PATH"
 marginalia --help | sed -n '1,12p'
 CLI_VERSION="$(marginalia --version)"
 [ "$CLI_VERSION" = "marginalia $EXPECTED_VERSION" ]
-marginalia vault current
+if [ "$PROFILE" != "release-lifecycle" ]; then
+  marginalia vault current
+fi
 if [ "$NO_SERVE" != "1" ]; then
   curl -fsS http://127.0.0.1:7777/health
   printf '\n'
@@ -1119,8 +1371,11 @@ if [ "$NO_SERVE" != "1" ]; then
 fi
 YAML="$HOME/.marginalia/vaults/$VAULT/marginalia.yaml"
 case "$PROFILE" in
-  skip|release-lifecycle)
+  skip)
     ! grep -q '^llm:' "$YAML"
+    ;;
+  release-lifecycle)
+    [ ! -e "$YAML" ]
     ;;
   lm-studio)
     grep -q 'provider: lm_studio' "$YAML"
@@ -1188,7 +1443,7 @@ esac
 if [ "$PROFILE" = "release-lifecycle" ]; then
   run_release_lifecycle
 else
-  marginalia stop --vault "$VAULT" >/dev/null 2>&1 || true
+  marginalia stop >/dev/null 2>&1 || true
   echo DOCKER_TMUX_HUMAN_INSTALL_OK
 fi
 RUNNER
@@ -1231,7 +1486,10 @@ drive_profile() {
       printf 'tmux session started. Attach and drive prompts:\n  tmux attach -t %s\n' "$SESSION"
       return
       ;;
-    skip|release-lifecycle)
+    release-lifecycle)
+      wait_for_text "RELEASE_LIFECYCLE_PREDECESSOR_RUNNING_OK" 900
+      ;;
+    skip)
       wait_for_text "Provider" 900
       tmux send-keys -t "$SESSION" "0" C-m
       ;;
@@ -1370,6 +1628,7 @@ run_direct() {
     export XDG_CONFIG_HOME="$xdg_config"
     export UV_CACHE_DIR="$uv_cache"
     export MARGINALIA_NO_MCP=1
+    export MARGINALIA_NO_OPEN=1
     # HOME is redirected here but never let a sandbox run persist PATH via
     # uv tool update-shell regardless.
     export MARGINALIA_NO_UPDATE_SHELL=1
@@ -1460,6 +1719,8 @@ run_docker_tmux() {
 init_paths
 if [ "$PROFILE" = "release-lifecycle" ]; then
   prepare_release_provenance
+elif [ -z "$EXPECTED_VERSION" ]; then
+  die "MARGINALIA_EXPECTED_VERSION is required by this unbaked tester"
 fi
 prepare_home
 if [ "$CLEANUP" -eq 1 ]; then

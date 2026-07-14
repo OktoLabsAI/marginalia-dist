@@ -2,9 +2,10 @@
 #
 #   powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/OktoLabsAI/marginalia-dist/main/install.ps1 | iex"
 #
-# Takes a fresh Windows machine from zero to a running Marginalia daemon wired
-# into Claude Code: prereqs -> install tool -> create vault -> configure LLM ->
-# serve -> register the MCP server.
+# Takes a fresh Windows machine from zero to a running Marginalia application
+# wired into Claude Code: prereqs -> install tool -> serve/open the app ->
+# register MCP. Vault creation and provider setup are application-first by
+# default; automation may explicitly preseed one vault with MARGINALIA_VAULT.
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
@@ -12,24 +13,27 @@ $ErrorActionPreference = "Stop"
 $DefaultWheelUrl = if ($env:MARGINALIA_DEFAULT_WHEEL_URL) {
     $env:MARGINALIA_DEFAULT_WHEEL_URL
 } else {
-    "https://github.com/OktoLabsAI/marginalia-dist/releases/download/v0.0.40/marginalia-0.0.40-py3-none-any.whl"
+    "https://github.com/OktoLabsAI/marginalia-dist/releases/download/v0.0.41/marginalia-0.0.41-py3-none-any.whl"
 }
 $DefaultManifestUrl = if ($env:MARGINALIA_DEFAULT_MANIFEST_URL) {
     $env:MARGINALIA_DEFAULT_MANIFEST_URL
 } else {
     "https://raw.githubusercontent.com/OktoLabsAI/marginalia-dist/main/release-manifest.json"
 }
-$ExpectedVersion = if ($env:MARGINALIA_EXPECTED_VERSION) { $env:MARGINALIA_EXPECTED_VERSION } else { "0.0.40" }
-$Extras = "embeddings,ladybug,mcp,litellm"
+$ExpectedVersion = if ($env:MARGINALIA_EXPECTED_VERSION) { $env:MARGINALIA_EXPECTED_VERSION } else { "0.0.41" }
+$Extras = "serve,litellm"
 $PyVersion = "3.12"
 $Repo = if ($env:MARGINALIA_REPO) { $env:MARGINALIA_REPO } else { "git@github.com:OktoLabsAI/marginalia.git" }
 $Ref = if ($env:MARGINALIA_REF) { $env:MARGINALIA_REF } else { "" }
-$Vault = if ($env:MARGINALIA_VAULT) { $env:MARGINALIA_VAULT } else { "mynotes" }
+$Vault = if ($env:MARGINALIA_VAULT) { $env:MARGINALIA_VAULT } else { "" }
 $Packs = if ($env:MARGINALIA_PACKS) { $env:MARGINALIA_PACKS } else { "core,research,personal" }
 $HomeRoot = Join-Path $HOME ".marginalia"
-$VaultDir = Join-Path (Join-Path $HomeRoot "vaults") $Vault
+$VaultDir = if ($Vault) { Join-Path (Join-Path $HomeRoot "vaults") $Vault } else { "" }
 $RestUrl = "http://127.0.0.1:7777"
 $McpUrl = "http://127.0.0.1:8201/mcp"
+$DaemonTokenFile = Join-Path $HomeRoot "daemon-7777.token"
+$DaemonRuntimeRoot = Join-Path $HomeRoot "runtime"
+$DaemonPidFile = Join-Path $DaemonRuntimeRoot ".marginalia\server.pid"
 $script:CloneTmp = $null
 $script:WorkTmp = $null
 $script:ToolRoot = $null
@@ -37,7 +41,8 @@ $script:ToolBin = $null
 $script:BackupRoot = $null
 $script:PreviousVersion = ""
 $script:PreviousCommand = ""
-$script:RollbackVault = ""
+$script:PreviousDaemonVault = ""
+$script:LegacyDaemon = $false
 $script:WasRunning = $false
 $script:TransactionArmed = $false
 $script:PreviousStopRequested = $false
@@ -65,6 +70,44 @@ function Die([string]$Message) {
     Write-Error "error: $Message"
     exit 1
 }
+
+function Open-ApplicationUi([string]$Url) {
+    try {
+        Start-Process $Url -ErrorAction Stop | Out-Null
+        return $true
+    } catch {
+        return $false
+    }
+}
+
+function Require-ExpectedWheelVersion([string]$Version) {
+    if (-not $Version) {
+        Die "wheel verification requires a manifest version or MARGINALIA_EXPECTED_VERSION"
+    }
+}
+
+function Assert-ValidPreseedInputs {
+    if ($Vault) { return }
+
+    foreach ($name in @(
+        "MARGINALIA_PACKS",
+        "MARGINALIA_LLM_PROVIDER",
+        "MARGINALIA_LLM_API_BASE",
+        "MARGINALIA_LLM_MODEL",
+        "MARGINALIA_LLM_API_KEY_ENV",
+        "MARGINALIA_LLM_SKIP_DISCOVERY",
+        "MARGINALIA_LLM_ALLOW_REMOTE",
+        "MARGINALIA_ALLOW_REMOTE_LLM",
+        "MARGINALIA_ONBOARD_NONINTERACTIVE"
+    )) {
+        $value = [Environment]::GetEnvironmentVariable($name, "Process")
+        if ($value) {
+            Die "$name requires MARGINALIA_VAULT; omit preseed settings and configure vaults in the Web UI, or set MARGINALIA_VAULT explicitly"
+        }
+    }
+}
+
+Assert-ValidPreseedInputs
 
 function Run-Checked([string]$Command, [string[]]$Arguments) {
     & $Command @Arguments
@@ -124,21 +167,57 @@ function Read-ServerProcessId([string]$Path) {
     return 0
 }
 
-function Find-DaemonLockRoot([int]$ProcessId, [string]$ActiveVault = "") {
+function Find-DaemonLockRoot([int]$ProcessId) {
     if ($ProcessId -le 0) { return "" }
 
-    $roots = @((Join-Path $HomeRoot "runtime"))
-    if ($ActiveVault) { $roots += $ActiveVault }
+    if ((Read-ServerProcessId $DaemonPidFile) -eq $ProcessId) {
+        return [string]$DaemonRuntimeRoot
+    }
+    return ""
+}
+
+function Get-LegacyVaultPaths {
+    $paths = @()
+    if ($script:PreviousCommand -and (Test-Path -LiteralPath $script:PreviousCommand)) {
+        try {
+            $raw = (& $script:PreviousCommand vault list --json 2>$null | Out-String)
+            if ($LASTEXITCODE -eq 0 -and $raw) {
+                $payload = ConvertFrom-Json $raw
+                $paths += @($payload.vaults | ForEach-Object { [string]$_.path })
+            }
+        } catch {}
+    }
     $vaultRoot = Join-Path $HomeRoot "vaults"
     if (Test-Path -LiteralPath $vaultRoot) {
-        $roots += @(Get-ChildItem -LiteralPath $vaultRoot -Directory -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName })
+        $paths += @(Get-ChildItem -LiteralPath $vaultRoot -Directory -ErrorAction SilentlyContinue |
+            Where-Object { Test-Path -LiteralPath (Join-Path $_.FullName "marginalia.yaml") } |
+            ForEach-Object { $_.FullName })
     }
+    return @($paths | Where-Object { $_ } | Sort-Object -Unique)
+}
 
-    foreach ($root in @($roots | Where-Object { $_ } | Select-Object -Unique)) {
-        $recordPath = Join-Path $root ".marginalia\server.pid"
-        if ((Read-ServerProcessId $recordPath) -eq $ProcessId) {
-            return [string]$root
+function Find-UnverifiedLiveLegacyDaemon {
+    foreach ($vaultPath in @(Get-LegacyVaultPaths)) {
+        $recordPath = Join-Path $vaultPath ".marginalia\server.pid"
+        $recordProcessId = Read-ServerProcessId $recordPath
+        if ($recordProcessId -gt 0 -and (Test-ProcessAlive $recordProcessId)) {
+            return [pscustomobject]@{
+                pid = $recordProcessId
+                vault = $vaultPath
+            }
         }
+    }
+    return $null
+}
+
+function Find-VerifiedLegacyLockRoot([int]$ProcessId, [string]$VaultPath) {
+    if ($ProcessId -le 0 -or -not $VaultPath) { return "" }
+    if (-not (Test-Path -LiteralPath (Join-Path $VaultPath "marginalia.yaml") -PathType Leaf)) {
+        return ""
+    }
+    $recordPath = Join-Path $VaultPath ".marginalia\server.pid"
+    if ((Read-ServerProcessId $recordPath) -eq $ProcessId) {
+        return $VaultPath
     }
     return ""
 }
@@ -180,38 +259,17 @@ function Get-ClaudeMcpRegistrationScope([string]$Output) {
 }
 
 function Assert-NoUndiscoveredLiveDaemon {
-    $vaultRoot = Join-Path $HomeRoot "vaults"
-    $vaultPaths = @()
-    if (Test-Path $vaultRoot) {
-        $vaultPaths += @(Get-ChildItem -LiteralPath $vaultRoot -Directory -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName })
+    if (Test-Path -LiteralPath $DaemonPidFile) {
+        $recordProcessId = Read-ServerProcessId $DaemonPidFile
+        if ($recordProcessId -gt 0 -and (Test-ProcessAlive $recordProcessId)) {
+            Die "a live Marginalia process (pid $recordProcessId) was found at '$DaemonRuntimeRoot', but status at $RestUrl was unavailable. Run: marginalia stop. Custom endpoint/ports may require manual stop. Update aborted before activation."
+        }
     }
-    $command = Get-MarginaliaCommand
-    if ($command) {
-        try {
-            $rawVaults = (& $command vault list --json 2>$null | Out-String)
-            if ($LASTEXITCODE -eq 0 -and $rawVaults) {
-                $vaultPaths += @((ConvertFrom-Json $rawVaults).vaults | ForEach-Object { [string]$_.path })
-            }
-        } catch {}
-    }
-    $runtimeRoot = Join-Path $HomeRoot "runtime"
-    $vaultPaths += $runtimeRoot
-
-    foreach ($vaultPath in @($vaultPaths | Where-Object { $_ } | Select-Object -Unique)) {
-        $recordPath = Join-Path $vaultPath ".marginalia\server.pid"
-        if (-not (Test-Path -LiteralPath $recordPath)) {
-            continue
+    if ($script:PreviousVersion -eq "0.0.40") {
+        $legacy = Find-UnverifiedLiveLegacyDaemon
+        if ($legacy) {
+            Die "a live Marginalia 0.0.40 process (pid $($legacy.pid)) has a vault-scoped PID record at '$($legacy.vault)\.marginalia\server.pid', but status at $RestUrl was unavailable. Run: marginalia stop --vault `"$($legacy.vault)`". Custom endpoint/ports may require manual stop. Update aborted before activation."
         }
-        $recordProcessId = Read-ServerProcessId $recordPath
-        if ($recordProcessId -le 0 -or -not (Test-ProcessAlive $recordProcessId)) {
-            continue
-        }
-        $stopCommand = if ($vaultPath -eq $runtimeRoot) {
-            "marginalia stop"
-        } else {
-            "marginalia stop --vault `"$vaultPath`""
-        }
-        Die "a live Marginalia process (pid $recordProcessId) was found for '$vaultPath', but authenticated status at $RestUrl was unavailable. Run: $stopCommand. Custom endpoint/ports may require manual stop. Update aborted before activation."
     }
 }
 
@@ -241,8 +299,9 @@ function Get-MarginaliaCommand {
     return $null
 }
 
-function Get-AuthenticatedStatus {
-    $command = Get-MarginaliaCommand
+function Get-DaemonStatus {
+    $command = $script:PreviousCommand
+    if (-not $command) { $command = Get-MarginaliaCommand }
     if ($command) {
         try {
             $raw = (& $command status --json --timeout 2 2>$null | Out-String)
@@ -253,34 +312,14 @@ function Get-AuthenticatedStatus {
         } catch {}
     }
 
-    $vaultPaths = @()
-    if ($command) {
+    try {
+        $status = Invoke-RestMethod -Uri "$RestUrl/api/v1/status" -TimeoutSec 2 -ErrorAction Stop
+        if ($status.pid) { return $status }
+    } catch {
         try {
-            $rawVaults = (& $command vault list --json 2>$null | Out-String)
-            if ($LASTEXITCODE -eq 0 -and $rawVaults) {
-                $vaultPaths += @((ConvertFrom-Json $rawVaults).vaults | ForEach-Object { [string]$_.path })
-            }
-        } catch {}
-    }
-    $vaultRoot = Join-Path $HomeRoot "vaults"
-    if (Test-Path $vaultRoot) {
-        $vaultPaths += @(Get-ChildItem -Path $vaultRoot -Filter "daemon.token" -Recurse -ErrorAction SilentlyContinue | ForEach-Object { $_.Directory.Parent.FullName })
-    }
-    foreach ($vaultPath in @($vaultPaths | Where-Object { $_ } | Select-Object -Unique)) {
-        $tokenFile = Join-Path $vaultPath ".marginalia\daemon.token"
-        if (-not (Test-Path $tokenFile)) { continue }
-        $token = (Get-Content -Raw $tokenFile).Trim()
-        if (-not $token) { continue }
-        $headers = @{ Authorization = "Bearer $token" }
-        try {
-            $status = Invoke-RestMethod -Uri "$RestUrl/api/v1/status" -Headers $headers -TimeoutSec 2 -ErrorAction Stop
+            $status = Invoke-RestMethod -Uri "$RestUrl/health" -TimeoutSec 2 -ErrorAction Stop
             if ($status.pid) { return $status }
-        } catch {
-            try {
-                $status = Invoke-RestMethod -Uri "$RestUrl/health" -Headers $headers -TimeoutSec 2 -ErrorAction Stop
-                if ($status.pid) { return $status }
-            } catch {}
-        }
+        } catch {}
     }
     return $null
 }
@@ -295,26 +334,17 @@ function Get-ToolVersion([string]$Root) {
     }
 }
 
-function Get-AuthenticatedServerVersion([string]$Command, [string]$VaultPath) {
-    $tokenFile = Join-Path $VaultPath ".marginalia\daemon.token"
-    if (-not (Test-Path $tokenFile)) { return "" }
-    $token = (Get-Content -Raw $tokenFile).Trim()
-    if (-not $token) { return "" }
-    $oldToken = $env:MARGINALIA_AUTH_TOKEN
+function Get-ServerVersion([string]$Command, [string]$VaultPath = "") {
     try {
-        $env:MARGINALIA_AUTH_TOKEN = $token
-        $payload = (& $Command status --vault $VaultPath --json --timeout 2 2>$null | Out-String)
+        $statusArgs = @("status", "--json", "--timeout", "2")
+        if ($VaultPath) { $statusArgs += @("--vault", $VaultPath) }
+        $payload = (& $Command @statusArgs 2>$null | Out-String)
         if ($LASTEXITCODE -eq 0 -and $payload) {
             return [string](ConvertFrom-Json $payload).marginalia_version
         }
-    } catch {
-        # v0.0.39 predates the status command; use its authenticated version API.
-    } finally {
-        $env:MARGINALIA_AUTH_TOKEN = $oldToken
-    }
+    } catch {}
     try {
-        $headers = @{ Authorization = "Bearer $token" }
-        return [string](Invoke-RestMethod -Uri "$RestUrl/version" -Headers $headers -TimeoutSec 2 -ErrorAction Stop).marginalia_version
+        return [string](Invoke-RestMethod -Uri "$RestUrl/version" -TimeoutSec 2 -ErrorAction Stop).marginalia_version
     } catch {
         return ""
     }
@@ -331,11 +361,8 @@ function Wait-ProcessExit([int]$ProcessId, [int]$TimeoutSeconds) {
 
 function Stop-CandidateDaemonForRollback {
     if (-not $script:CandidateDaemonStarted) { return }
-    if (-not $script:RollbackVault) {
-        throw "candidate daemon vault is unknown; refusing to delete its active environment"
-    }
 
-    $recordPath = Join-Path $script:RollbackVault ".marginalia\server.pid"
+    $recordPath = $DaemonPidFile
     $candidateProcessId = $script:CandidateProcessId
     if ($candidateProcessId -le 0) {
         $candidateProcessId = Read-ServerProcessId $recordPath
@@ -343,7 +370,7 @@ function Stop-CandidateDaemonForRollback {
     }
     $candidate = Join-Path $script:ToolBin "marginalia.exe"
     if (Test-Path -LiteralPath $candidate) {
-        & $candidate stop --vault $script:RollbackVault --timeout 10 2>$null | Out-Null
+        & $candidate stop --timeout 10 2>$null | Out-Null
     }
 
     for ($i = 0; $i -lt 15; $i++) {
@@ -375,9 +402,6 @@ function Stop-CandidateDaemonForRollback {
 
 function Restore-PreviousDaemonState {
     if (-not $script:WasRunning) { return }
-    if (-not $script:RollbackVault) {
-        throw "previous daemon vault is unknown; restart could not be verified"
-    }
 
     # Before activation, a failed/refused stop may leave the original process
     # untouched. Do not launch a duplicate daemon or describe that state as an
@@ -403,11 +427,19 @@ function Restore-PreviousDaemonState {
     if (-not $restored -or -not (Test-Path -LiteralPath $restored)) {
         throw "previous daemon command could not be restored"
     }
-    & $restored serve --daemon --vault $script:RollbackVault 2>$null | Out-Null
+    $restartArgs = @("serve", "--daemon")
+    $serveHelp = (& $restored serve --help 2>$null | Out-String)
+    if ($serveHelp -match '(?m)--no-open\b') {
+        $restartArgs += "--no-open"
+    }
+    if ($script:PreviousDaemonVault) {
+        $restartArgs += @("--vault", $script:PreviousDaemonVault)
+    }
+    & $restored @restartArgs 2>$null | Out-Null
     if ($LASTEXITCODE -ne 0) { throw "previous daemon could not be restarted" }
     $runningVersion = ""
     for ($i = 0; $i -lt 30; $i++) {
-        $runningVersion = Get-AuthenticatedServerVersion $restored $script:RollbackVault
+        $runningVersion = Get-ServerVersion $restored $script:PreviousDaemonVault
         if ($runningVersion) { break }
         Start-Sleep -Seconds 1
     }
@@ -606,6 +638,8 @@ if ($candidateKind -eq "wheel") {
         }
     }
 
+    Require-ExpectedWheelVersion $ExpectedVersion
+
     $expectedSha = if ($env:MARGINALIA_WHEEL_SHA256) { $env:MARGINALIA_WHEEL_SHA256 } elseif ($manifest) { [string]$manifest.sha256 } else { "" }
     if (-not $expectedSha) { Die "wheel verification requires MARGINALIA_MANIFEST or MARGINALIA_WHEEL_SHA256" }
     if ($manifest -and $env:MARGINALIA_WHEEL_SHA256 -and $env:MARGINALIA_WHEEL_SHA256 -ne [string]$manifest.sha256) {
@@ -659,49 +693,64 @@ Info "staged Marginalia $candidateVersion; active installation is still untouche
 
 $upgrade = $false
 $wasRunning = $false
-$restartVault = ""
 $oldPid = 0
 $oldLockRoot = ""
-$status = Get-AuthenticatedStatus
+$script:PreviousCommand = [string](Get-MarginaliaCommand)
+$script:PreviousVersion = Get-ToolVersion $script:ToolRoot
+$status = Get-DaemonStatus
 if (-not $status) {
     # A daemon on a custom endpoint/port is invisible to the default REST probe.
-    # Fail closed on any live vault PID record before moving the installed tool.
+    # Fail closed on any live application PID record before moving the installed tool.
     Assert-NoUndiscoveredLiveDaemon
 }
 if ($status) {
     $upgrade = $true
     $wasRunning = $true
     $script:WasRunning = $true
-    if ($status.PSObject.Properties.Name -contains "vault_path") {
-        $restartVault = [string]$status.vault_path
-    }
     if ($status.PSObject.Properties.Name -contains "pid") {
         $oldPid = [int]$status.pid
     }
-    $oldLockRoot = Find-DaemonLockRoot $oldPid $restartVault
+    $oldLockRoot = Find-DaemonLockRoot $oldPid
     if (-not $oldLockRoot) {
-        Die "authenticated daemon status reported pid $oldPid, but its lifecycle lock could not be found; update aborted before shutdown"
+        $statusVersion = if ($status.PSObject.Properties.Name -contains "marginalia_version") {
+            [string]$status.marginalia_version
+        } else { "" }
+        $statusVault = if ($status.PSObject.Properties.Name -contains "vault_path") {
+            [string]$status.vault_path
+        } else { "" }
+        if ($script:PreviousVersion -ne "0.0.40" -or $statusVersion -ne "0.0.40") {
+            Die "Marginalia status reported pid $oldPid, but its application lifecycle lock could not be verified; update aborted before shutdown"
+        }
+        $oldLockRoot = Find-VerifiedLegacyLockRoot $oldPid $statusVault
+        if (-not $oldLockRoot) {
+            $reportedVault = if ($statusVault) { $statusVault } else { "unknown" }
+            Die "Marginalia 0.0.40 status reported pid $oldPid and vault $reportedVault, but the matching vault-scoped lifecycle lock could not be verified; update aborted before shutdown"
+        }
+        $script:LegacyDaemon = $true
+        $script:PreviousDaemonVault = $statusVault
     }
     if ($status.PSObject.Properties.Name -contains "endpoint" -and $status.endpoint) {
         $statusEndpoint = ([string]$status.endpoint).TrimEnd('/')
         if ($statusEndpoint -notin @($RestUrl, "http://localhost:7777")) {
-            Die "live Marginalia daemon uses custom endpoint $statusEndpoint; update aborted before shutdown because the installer cannot preserve custom ports automatically. Stop it first: marginalia stop --vault `"$oldLockRoot`""
+            if ($script:LegacyDaemon) {
+                Die "live Marginalia 0.0.40 daemon uses custom endpoint $statusEndpoint; update aborted before shutdown because the installer cannot preserve custom ports automatically. Stop it first: marginalia stop --vault `"$($script:PreviousDaemonVault)`""
+            }
+            Die "live Marginalia daemon uses custom endpoint $statusEndpoint; update aborted before shutdown because the installer cannot preserve custom ports automatically. Stop it first: marginalia stop"
         }
     }
-    $script:RollbackVault = $restartVault
     Step "Existing Marginalia daemon detected - updating in place"
-    Info "active vault: $(if ($restartVault) { $restartVault } else { 'unknown' })"
     $existing = Get-MarginaliaCommand
-    $script:PreviousCommand = if ($existing) { $existing } else { "" }
-    $script:PreviousVersion = Get-ToolVersion $script:ToolRoot
-    if (-not $restartVault) { Die "authenticated daemon status did not identify its active vault; update aborted" }
     if (-not $existing) { Die "daemon is running but its installed marginalia command was not found" }
     $script:PreviousProcessId = $oldPid
     # Arm rollback before requesting shutdown. Any error or interruption from
     # this point must leave the existing tool in place and restore its daemon.
     $script:TransactionArmed = $true
     $script:PreviousStopRequested = $true
-    & $stageCli stop --vault $oldLockRoot --timeout 30
+    $stopArgs = @("stop", "--timeout", "30")
+    if ($script:LegacyDaemon) {
+        $stopArgs = @("stop", "--vault", $script:PreviousDaemonVault, "--timeout", "30")
+    }
+    & $stageCli @stopArgs
     if ($LASTEXITCODE -ne 0) {
         Die "could not stop the verified daemon (pid $oldPid); update aborted before replacing the installed tool"
     }
@@ -717,9 +766,10 @@ if ($status) {
     }
     Info "stopped the running daemon - it will restart on the new version below"
 } elseif (Test-TcpPort 7777) {
-    Die "port 7777 is in use but authenticated Marginalia status is unavailable; update aborted"
-} elseif ((Test-Path (Join-Path $HomeRoot "vaults")) -and
-          (Get-ChildItem -Path (Join-Path $HomeRoot "vaults") -Filter "marginalia.yaml" -Recurse -Depth 2 -ErrorAction SilentlyContinue | Select-Object -First 1)) {
+    Die "port 7777 is in use but Marginalia status is unavailable; update aborted"
+} elseif ((Test-Path (Join-Path (Join-Path $script:ToolRoot "marginalia") "Scripts\python.exe")) -or
+          ((Test-Path (Join-Path $HomeRoot "vaults")) -and
+           (Get-ChildItem -Path (Join-Path $HomeRoot "vaults") -Filter "marginalia.yaml" -Recurse -Depth 2 -ErrorAction SilentlyContinue | Select-Object -First 1))) {
     # Daemon isn't up (crashed, machine rebooted, whatever) but this machine
     # was already set up before - a re-run should update in place, not treat
     # this as a fresh install and re-run vault-create/onboard against existing
@@ -783,18 +833,9 @@ if ($env:MARGINALIA_NO_UPDATE_SHELL -ne "1") {
     }
 }
 
-# Upgrade path but health check never told us which vault was active (daemon
-# wasn't running when we checked) - ask the CLI's own notion of "current".
-if ($upgrade -and -not $restartVault) {
-    $current = (& $marginalia vault current 2>$null | Select-Object -First 1)
-    if ($LASTEXITCODE -eq 0 -and $current) {
-        $restartVault = [string]$current
-    }
-}
-
 if ($upgrade) {
     Step "Update mode - leaving your vaults, default, and LLM config untouched"
-} else {
+} elseif ($Vault) {
     Step "Creating vault '$Vault' (packs: $Packs)"
     $yaml = Join-Path $VaultDir "marginalia.yaml"
     if (Test-Path $yaml) {
@@ -836,17 +877,10 @@ if ($upgrade) {
         Info "no interactive terminal detected - using noninteractive onboarding"
     }
     Run-Checked $marginalia $onboardArgs
+} else {
+    Step "Application-first setup"
+    Info "no startup vault was requested; create, select, and configure vaults in the web UI"
 }
-
-$serveVault = $Vault
-$vaultLabel = $Vault
-$tokenVault = $VaultDir
-if ($upgrade -and $restartVault) {
-    $serveVault = $restartVault
-    $vaultLabel = Split-Path -Leaf $restartVault
-    $tokenVault = $restartVault
-}
-$script:RollbackVault = $tokenVault
 
 # Tracks whether we can honestly report success at the end. Starts true -
 # MARGINALIA_NO_SERVE=1 (never attempted) and upgrade (already known-good) are
@@ -862,15 +896,14 @@ if ($env:MARGINALIA_NO_SERVE -eq "1") {
     Info "the daemon was stopped before this update, so it remains stopped"
 } else {
     if ($upgrade) {
-        Step "Restarting the daemon on the new version (vault: $vaultLabel)"
+        Step "Restarting the application daemon on the new version"
     } else {
         Step "Starting the Marginalia daemon (UI/REST :7777 + MCP :8201)"
     }
     $script:CandidateDaemonStarted = $true
-    & $marginalia serve --daemon --vault $serveVault
+    & $marginalia serve --daemon --no-open
     $serveExitCode = $LASTEXITCODE
-    $candidateRecord = Join-Path $tokenVault ".marginalia\server.pid"
-    $observedCandidateProcessId = Read-ServerProcessId $candidateRecord
+    $observedCandidateProcessId = Read-ServerProcessId $DaemonPidFile
     if ($observedCandidateProcessId -gt 0) {
         $script:CandidateProcessId = $observedCandidateProcessId
     }
@@ -882,12 +915,12 @@ if ($env:MARGINALIA_NO_SERVE -eq "1") {
         $serverVersion = ""
         for ($i = 0; $i -lt 60; $i++) {
             if ($script:CandidateProcessId -le 0) {
-                $observedCandidateProcessId = Read-ServerProcessId $candidateRecord
+                $observedCandidateProcessId = Read-ServerProcessId $DaemonPidFile
                 if ($observedCandidateProcessId -gt 0) {
                     $script:CandidateProcessId = $observedCandidateProcessId
                 }
             }
-            $serverVersion = Get-AuthenticatedServerVersion $marginalia $tokenVault
+            $serverVersion = Get-ServerVersion $marginalia
             if ($serverVersion -eq $installedVersion) { break }
             Start-Sleep -Seconds 1
         }
@@ -901,7 +934,7 @@ if ($env:MARGINALIA_NO_SERVE -eq "1") {
             } else {
                 Warn "server did not become ready within 60s"
             }
-            Warn "try 'marginalia serve --foreground --vault $serveVault'"
+            Warn "try 'marginalia serve --foreground --no-open'"
             Warn "daemon log: $logPath"
         }
     }
@@ -922,7 +955,7 @@ Remove-Item -Recurse -Force $script:BackupRoot -ErrorAction SilentlyContinue
 $script:BackupRoot = $null
 
 $globalUrl = $McpUrl
-$tokenFile = Join-Path $tokenVault ".marginalia\daemon.token"
+$tokenFile = $DaemonTokenFile
 $authToken = if (Test-Path $tokenFile) { (Get-Content -Raw $tokenFile).Trim() } else { "" }
 $mcpWired = $false
 if ($env:MARGINALIA_NO_MCP -eq "1") {
@@ -932,7 +965,7 @@ if ($env:MARGINALIA_NO_MCP -eq "1") {
     Info "start the daemon, then re-run this installer to register its authenticated MCP endpoint"
 } elseif (Get-Command claude -ErrorAction SilentlyContinue) {
     Step "Registering the authenticated MCP server with Claude Code (user scope)"
-    # v0.0.40 reuses the vault credential across daemon restarts. Preserve an
+    # Marginalia reuses the application MCP credential across daemon restarts. Preserve an
     # existing user registration instead of deleting a working integration before
     # its replacement is proven. A fresh registration still uses Claude's only
     # documented HTTP-header input surface.
@@ -960,7 +993,7 @@ if ($env:MARGINALIA_NO_MCP -eq "1") {
                 Die "Claude MCP registration was added but did not verify as a connected user-scope endpoint"
             }
             $mcpWired = $true
-            Info "registered and verified 'marginalia' for the active vault"
+            Info "registered and verified the app-scoped 'marginalia' MCP endpoint"
         } else {
             Warn "automatic Claude Code registration failed"
         }
@@ -970,11 +1003,21 @@ if ($env:MARGINALIA_NO_MCP -eq "1") {
     Info "install Claude Code, then re-run this installer to register Marginalia"
 }
 
+# The daemon itself stays headless while the installer proves the exact version.
+# Only the committed, verified application is allowed to launch a browser.
+if ($serverStarted -and $env:MARGINALIA_NO_OPEN -ne "1") {
+    Step "Opening the verified Marginalia application"
+    if (Open-ApplicationUi "$RestUrl/") {
+        Info "opened $RestUrl/"
+    } else {
+        Warn "browser launch is unavailable; open $RestUrl/"
+    }
+}
+
 Write-Host ""
 if (-not $serveOk) {
     Write-Host "Marginalia $installedVersion installed, but the daemon did not start correctly." -ForegroundColor Yellow
-    Info "vault    : $serveVault"
-    Info "start manually: marginalia serve --foreground --vault $serveVault"
+    Info "start manually: marginalia serve --foreground"
     Info "log      : $logPath"
     exit 1
 }
@@ -990,15 +1033,15 @@ if ($upgrade) {
 } else {
     Write-Host "Marginalia $installedVersion installed; daemon was not started." -ForegroundColor Green
 }
-Info "vault    : $serveVault"
+Info "vaults   : managed independently in the application"
 if ($serverStarted) {
-    Info "web UI   : marginalia ui"
-    Info "stop     : marginalia stop --vault `"$tokenVault`""
+    Info "web UI   : $RestUrl/"
+    Info "stop     : marginalia stop"
     if ($mcpWired) {
         Info "Claude MCP: authenticated user-scope connection registered"
     }
 } else {
-    Info "start    : marginalia serve --daemon --vault $serveVault"
+    Info "start    : marginalia serve --daemon"
 }
 Info "update   : re-run this installer"
 Remove-InstallerTemps

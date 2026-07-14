@@ -13,13 +13,20 @@ jobs:
   parity:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
       - name: Check shell scripts
         run: |
           set -euo pipefail
           bash -n install.sh test-install.sh
           shellcheck install.sh test-install.sh
+          PRESEED_OUTPUT="$(mktemp)"
+          if MARGINALIA_LLM_PROVIDER=skip bash install.sh >"$PRESEED_OUTPUT" 2>&1; then
+            echo "installer accepted provider preseed without MARGINALIA_VAULT" >&2
+            exit 1
+          fi
+          grep -Fq 'MARGINALIA_LLM_PROVIDER requires MARGINALIA_VAULT' "$PRESEED_OUTPUT"
+          rm -f "$PRESEED_OUTPUT"
           ./test-install.sh --help | grep -F -- '--profile release-lifecycle'
           EVIDENCE=evidence/v0.0.40/linux-docker-tmux-release-lifecycle.txt
           EVIDENCE_SHA=6b72dc5c4c2dbefd03772492234b9cf3f73e092644ef29469aa8ae431792101f
@@ -62,8 +69,20 @@ jobs:
             grep -Fq "$marker" test-install.sh
             test "$(grep -Fc "$marker" "$EVIDENCE")" -eq 1
           done
+          grep -Fq 'RELEASE_LIFECYCLE_APP_FIRST_OK' test-install.sh
+          for marker in \
+            RELEASE_LIFECYCLE_PREDECESSOR_RUNNING_OK \
+            RELEASE_LIFECYCLE_PREDECESSOR_ROLLBACK_OK \
+            RELEASE_LIFECYCLE_PREDECESSOR_MIGRATION_OK
+          do
+            grep -Fq "$marker" test-install.sh
+            test "$(grep -Fc "$marker" test-install.ps1)" -eq 1
+          done
+          test "$(grep -Fc 'RELEASE_LIFECYCLE_PREDECESSOR_RUNNING_OK' test-install.sh)" -eq 2
+          test "$(grep -Fc "sha256sum \"\$app_token_file\"" test-install.sh)" -eq 1
+          test "$(grep -Fc "Get-FileHash -Algorithm SHA256 -LiteralPath \$appTokenFile" test-install.ps1)" -eq 1
           grep -Fq 'marginalia ui --no-open' test-install.sh
-          grep -Fq 'Authenticated Marginalia UI is ready at' test-install.sh
+          grep -Fq 'Marginalia UI is ready at' test-install.sh
           grep -Fq '.release-lifecycle-previous-tool-sentinel' test-install.sh
           grep -Fq "sha256sum \"\$rollback_sentinel\"" test-install.sh
           grep -Fq \
@@ -77,10 +96,25 @@ jobs:
           import hashlib
           import io
           import json
+          import os
           import re
+          import urllib.error
           import urllib.request
           import zipfile
           from pathlib import Path
+
+          def github_api(path):
+              headers = {
+                  "Accept": "application/vnd.github+json",
+                  "User-Agent": "marginalia-distribution-gate",
+                  "X-GitHub-Api-Version": "2022-11-28",
+              }
+              request = urllib.request.Request(
+                  f"https://api.github.com/{path}",
+                  headers=headers,
+              )
+              with urllib.request.urlopen(request, timeout=60) as response:
+                  return json.load(response)
 
           manifest = json.loads(Path("release-manifest.json").read_text())
           version = manifest["version"]
@@ -91,6 +125,104 @@ jobs:
           assert url.endswith(f"/v{version}/{wheel}")
           assert re.fullmatch(r"[0-9a-f]{64}", manifest["sha256"])
           assert re.fullmatch(r"[0-9a-f]{40}", manifest["source_commit"])
+
+          # The source repository is private and org policy disables deploy keys.
+          # Each direct source tag is operator-verified before the dist bake, then
+          # pinned here so public Actions can enforce the exact source commit.
+          operator_verified_source_commits = {
+              "0.0.40": "302c56b23e29dfe1bbf79eeff5efc63c72b8d34f",
+              "0.0.41": "aae59db84c2abd0e915ac4cb72c08e60209abe34",
+          }
+          assert version in operator_verified_source_commits, (
+              f"v{version} has no operator-verified private source tag pin"
+          )
+          assert manifest["source_commit"] == operator_verified_source_commits[version], (
+              "manifest.source_commit does not match the operator-verified private source tag"
+          )
+
+          try:
+              dist_ref = github_api(
+                  f"repos/OktoLabsAI/marginalia-dist/git/ref/tags/v{version}"
+              )
+          except urllib.error.HTTPError as error:
+              raise AssertionError(
+                  f"could not read public marginalia-dist tag v{version} "
+                  f"via the GitHub API (HTTP {error.code})"
+              ) from error
+          assert dist_ref["ref"] == f"refs/tags/v{version}", (
+              "the public distribution tag API returned a different ref"
+          )
+          tag_target = dist_ref["object"]
+          while tag_target["type"] == "tag":
+              tag_target = github_api(
+                  f"repos/OktoLabsAI/marginalia-dist/git/tags/{tag_target['sha']}"
+              )["object"]
+          assert tag_target["type"] == "commit", (
+              "the public distribution tag must ultimately resolve to a commit"
+          )
+
+          # v0.0.40 predates the strict driver-tag rule and stays immutable at its
+          # historical tag commit. New releases require tag == the exact atomic
+          # pre-evidence driver. Once Linux evidence exists, its self-verified
+          # DRIVER_COMMIT remains the stable comparison for later evidence commits.
+          historical_dist_tag_commits = {
+              "0.0.40": "19847892b7e129225011d21d6d1f2ce00f996458",
+          }
+          if version in historical_dist_tag_commits:
+              expected_dist_tag_commit = historical_dist_tag_commits[version]
+          else:
+              evidence_path = Path(
+                  f"evidence/v{version}/linux-docker-tmux-release-lifecycle.txt"
+              )
+              if evidence_path.is_file():
+                  driver_matches = re.findall(
+                      r"(?m)^DRIVER_COMMIT=([0-9a-f]{40})$",
+                      evidence_path.read_text(),
+                  )
+                  assert len(driver_matches) == 1, (
+                      "Linux evidence must record exactly one canonical DRIVER_COMMIT"
+                  )
+                  expected_dist_tag_commit = driver_matches[0]
+              else:
+                  expected_dist_tag_commit = os.environ.get("GITHUB_SHA", "")
+                  assert re.fullmatch(r"[0-9a-f]{40}", expected_dist_tag_commit), (
+                      "pre-evidence distribution validation requires the exact GITHUB_SHA"
+                  )
+          assert tag_target["sha"] == expected_dist_tag_commit, (
+              "the public distribution tag does not resolve to the atomic driver commit"
+          )
+
+          try:
+              release = github_api(
+                  f"repos/OktoLabsAI/marginalia-dist/releases/tags/v{version}"
+              )
+          except urllib.error.HTTPError as error:
+              raise AssertionError(
+                  f"could not read public marginalia-dist prerelease v{version} "
+                  f"via the GitHub API (HTTP {error.code})"
+              ) from error
+          assert release["tag_name"] == f"v{version}", (
+              "the public release API returned a different tag"
+          )
+          assert release["draft"] is False, (
+              "the distribution release must not be a draft"
+          )
+          assert release["prerelease"] is True, (
+              "the distribution release must be a prerelease"
+          )
+          assert len(release["assets"]) == 1, (
+              "the distribution prerelease must contain exactly one asset"
+          )
+          asset = release["assets"][0]
+          assert asset["name"] == wheel, (
+              "the release asset name does not match manifest.wheel"
+          )
+          assert asset["browser_download_url"] == url, (
+              "the release asset URL does not match manifest.wheel_url"
+          )
+          assert asset["digest"] == f'sha256:{manifest["sha256"]}', (
+              "the GitHub release asset digest does not match manifest.sha256"
+          )
 
           shell = Path("install.sh").read_text()
           powershell = Path("install.ps1").read_text()
@@ -135,8 +267,55 @@ jobs:
           assert "claude_mcp_registration_matches" in shell
           assert "Test-ClaudeMcpRegistrationMatches" in powershell
           assert "Find-DaemonLockRoot" in powershell
-          windows_lifecycle_markers = (
-              "WINDOWS_RELEASE_LIFECYCLE_INTERACTIVE_ONBOARDING_OK",
+          assert "Find-VerifiedLegacyLockRoot" in powershell
+          assert "Find-UnverifiedLiveLegacyDaemon" in powershell
+          assert 'EXTRAS="serve,litellm"' in shell
+          assert '$Extras = "serve,litellm"' in powershell
+          assert 'DAEMON_PID_FILE="${DAEMON_RUNTIME_ROOT}/.marginalia/server.pid"' in shell
+          assert 'DAEMON_TOKEN_FILE="${HOME_ROOT}/daemon-7777.token"' in shell
+          assert '$DaemonPidFile = Join-Path $DaemonRuntimeRoot ".marginalia\\server.pid"' in powershell
+          assert '$DaemonTokenFile = Join-Path $HomeRoot "daemon-7777.token"' in powershell
+          assert "Assert-ValidPreseedInputs" in powershell
+          assert "requires MARGINALIA_VAULT" in powershell
+          assert "serve --daemon --no-open" in shell
+          assert '& $marginalia serve --daemon --no-open' in powershell
+          assert 'STOP_COMMAND=("${STAGE_CLI}" stop --vault "${PREVIOUS_DAEMON_VAULT}" --timeout 30)' in shell
+          assert '$stopArgs = @("stop", "--vault", $script:PreviousDaemonVault, "--timeout", "30")' in powershell
+          assert 'serve --help 2>/dev/null | grep -q -- \'--no-open\'' in shell
+          assert '$serveHelp -match \'(?m)--no-open\\b\'' in powershell
+          assert "Authenticated Marginalia UI" not in shell_test
+          assert "Authenticated Marginalia UI" not in powershell_test
+          assert "Authorization: Bearer" not in shell_test
+          assert "Authorization = \"Bearer" not in powershell_test
+          predecessor_markers = (
+              "RELEASE_LIFECYCLE_PREDECESSOR_RUNNING_OK",
+              "RELEASE_LIFECYCLE_PREDECESSOR_ROLLBACK_OK",
+              "RELEASE_LIFECYCLE_PREDECESSOR_MIGRATION_OK",
+          )
+          linux_lifecycle_markers = predecessor_markers + (
+              "RELEASE_LIFECYCLE_APP_FIRST_OK",
+              "RELEASE_LIFECYCLE_FRESH_INSTALL_OK",
+              "RELEASE_LIFECYCLE_STATUS_UI_OK",
+              "RELEASE_LIFECYCLE_STOPPED_UPDATE_OK",
+              "RELEASE_LIFECYCLE_RUNNING_UPDATE_OK",
+              "RELEASE_LIFECYCLE_CUSTOM_PORT_REFUSAL_OK",
+              "RELEASE_LIFECYCLE_LIVE_PID_REFUSAL_OK",
+              "RELEASE_LIFECYCLE_PREVIOUS_TOOL_SENTINEL_SHA256=",
+              "RELEASE_LIFECYCLE_PREVIOUS_TOOL_SENTINEL_OK",
+              "RELEASE_LIFECYCLE_ACTIVATION_ROLLBACK_OK",
+              "RELEASE_LIFECYCLE_FINAL_STOP_OK",
+              "DOCKER_TMUX_RELEASE_LIFECYCLE_OK",
+          )
+          for marker in linux_lifecycle_markers:
+              expected_count = 2 if marker in {
+                  "RELEASE_LIFECYCLE_PREDECESSOR_RUNNING_OK",
+                  "DOCKER_TMUX_RELEASE_LIFECYCLE_OK",
+              } else 1
+              assert shell_test.count(marker) == expected_count, marker
+          linux_marker_positions = [shell_test.index(marker) for marker in linux_lifecycle_markers]
+          assert linux_marker_positions == sorted(linux_marker_positions)
+          windows_lifecycle_markers = predecessor_markers + (
+              "WINDOWS_RELEASE_LIFECYCLE_APP_FIRST_OK",
               "RELEASE_LIFECYCLE_FRESH_INSTALL_OK",
               "RELEASE_LIFECYCLE_STATUS_UI_OK",
               "RELEASE_LIFECYCLE_STOPPED_UPDATE_OK",
@@ -153,6 +332,11 @@ jobs:
               assert powershell_test.count(marker) == 1, marker
           marker_positions = [powershell_test.index(marker) for marker in windows_lifecycle_markers]
           assert marker_positions == sorted(marker_positions)
+          for tester in (shell_test, powershell_test):
+              assert "19847892b7e129225011d21d6d1f2ce00f996458" in tester
+              assert "619d45919b506757442b758a4898e865e5600c7da12d8c83677bb3080414c5d8" in tester
+          assert "55127f6a3ef35e7b0ae9bc0aeb506dc3c51b6695d9dfb759f73dd018b8870866" in shell_test
+          assert "6856a0bac3c424a06ce865e2adff1a28906c8e3cbe7ea9603cddae92b08fa29d" in powershell_test
           powershell_sentinel_create = powershell_test.index(
               '-Value "previous-tool-only:$Version"'
           )
@@ -174,6 +358,7 @@ jobs:
           assert '$env:UV_PYTHON_INSTALL_REGISTRY = "0"' in powershell_test
           assert "UV_UNMANAGED_INSTALL" in powershell_test
           assert "MARGINALIA_PACKS" in powershell_test
+          assert "MARGINALIA_ALLOW_REMOTE_LLM" in powershell_test
           assert "MARGINALIA_MANIFEST = $ManifestUrl" in powershell_test
           assert "Initialize-TestSandbox" in powershell_test
           assert "Export-PublicEvidence" in powershell_test
@@ -181,7 +366,7 @@ jobs:
           assert "--driver-commit" in shell_test
           assert "DRIVER_COMMIT=" in shell_test
           assert "MARGINALIA_MANIFEST=\"$MANIFEST_URL\"" in shell_test
-          assert "curl -fsS --config - http://127.0.0.1:7777/" in shell_test
+          assert "curl -fsS http://127.0.0.1:7777/" in shell_test
           assert '-H "Authorization: Bearer $token"' not in shell_test
           assert "test_home_is_owned" in shell_test
           assert "refusing to delete test sandbox with invalid PID record" in shell_test
@@ -224,9 +409,9 @@ jobs:
   bash-transaction:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
         with:
           python-version: "3.12"
           enable-cache: false
@@ -253,7 +438,10 @@ jobs:
             VERIFY_PYTHON="$(command -v python3)"
             TOOL_ROOT="$TEST_ROOT/tools"
             TOOL_BIN="$TEST_ROOT/bin"
-            ROLLBACK_VAULT="$TEST_ROOT/vault"
+            HOME_ROOT="$TEST_ROOT/home/.marginalia"
+            DAEMON_RUNTIME_ROOT="$HOME_ROOT/runtime"
+            DAEMON_PID_FILE="$DAEMON_RUNTIME_ROOT/.marginalia/server.pid"
+            DAEMON_TOKEN_FILE="$HOME_ROOT/daemon-7777.token"
             PREVIOUS_VERSION="old-version"
             PREVIOUS_COMMAND="$TOOL_BIN/marginalia"
             WAS_RUNNING=1
@@ -261,8 +449,7 @@ jobs:
             ACTIVATION_STARTED=""
             OLD_PID=99999999
           }
-          mkdir -p "$TOOL_BIN" "$ROLLBACK_VAULT/.marginalia"
-          printf '%s\n' test-token > "$ROLLBACK_VAULT/.marginalia/daemon.token"
+          mkdir -p "$TOOL_BIN" "$(dirname "$DAEMON_PID_FILE")"
           cat > "$TOOL_BIN/marginalia" <<'SH'
           #!/bin/sh
           case "$1" in
@@ -280,6 +467,11 @@ jobs:
           test -f "$RESTART_MARKER"
           grep -Fq 'restored and restarted Marginalia old-version' \
             "$TEST_ROOT/preactivation.out"
+
+          # Preserve explicit compatibility coverage for pre-versioned integer
+          # records without presenting one as a current application owner.
+          printf '%s\n' 4242 > "$TEST_ROOT/legacy-integer.pid"
+          test "$(read_server_pid "$TEST_ROOT/legacy-integer.pid")" = 4242
 
           # State below is consumed by functions loaded from helpers.sh.
           # shellcheck disable=SC2034
@@ -300,7 +492,11 @@ jobs:
           chmod +x "$TOOL_BIN/marginalia"
           sleep 300 &
           LIVE_PID=$!
-          printf '%s\n' "$LIVE_PID" > "$ROLLBACK_VAULT/.marginalia/server.pid"
+          # This helper-level rollback test needs only a parseable current-record
+          # shape. Exact PidFile ownership is exercised by the installed-tool
+          # refusal fixture below.
+          printf '{"version":1,"pid":%s,"start_token":"synthetic-helper","owner_id":"synthetic-helper"}\n' \
+            "$LIVE_PID" > "$DAEMON_PID_FILE"
           port_in_use() { return 1; }
           mcp_port_in_use() { return 1; }
           if (installer_exit) >"$TEST_ROOT/rollback.out" 2>&1; then
@@ -312,22 +508,6 @@ jobs:
           grep -Fq 'candidate daemon is still live; refusing to remove its environment' \
             "$TEST_ROOT/rollback.out"
           grep -Fq "recovery backup retained at $BACKUP_ROOT" "$TEST_ROOT/rollback.out"
-
-          CURL_ARGS="$TEST_ROOT/curl.args"
-          CURL_STDIN="$TEST_ROOT/curl.stdin"
-          curl() {
-            printf '%s\n' "$@" > "$CURL_ARGS"
-            cat > "$CURL_STDIN"
-            printf '%s' '{"ok":true}'
-          }
-          SECRET='not-in-process-argv-123'
-          test "$(authenticated_get "$SECRET" 'http://127.0.0.1:7777/version')" = \
-            '{"ok":true}'
-          if grep -Fq "$SECRET" "$CURL_ARGS"; then
-            echo "authenticated curl leaked its token into process arguments" >&2
-            exit 1
-          fi
-          grep -Fq "Authorization: Bearer $SECRET" "$CURL_STDIN"
 
           MCP_URL='http://127.0.0.1:8201/mcp'
           CONNECTED_USER="$(printf '%s\n' \
@@ -394,10 +574,138 @@ jobs:
           source = Path("install.sh").read_text()
           status = source.index('STATUS_JSON="$(discover_daemon_status)"')
           armed = source.index('SHUTDOWN_REQUESTED="1"', status)
-          stop = source.index('"${STAGE_CLI}" stop --vault "${OLD_LOCK_ROOT}"', armed)
+          app_stop = source.index('STOP_COMMAND=("${STAGE_CLI}" stop --timeout 30)', armed)
+          legacy_stop = source.index(
+              'STOP_COMMAND=("${STAGE_CLI}" stop --vault "${PREVIOUS_DAEMON_VAULT}" --timeout 30)',
+              armed,
+          )
+          stop = source.index('if ! "${STOP_COMMAND[@]}"', app_stop)
           activation = source.index('ACTIVATION_STARTED="1"', status)
-          assert status < armed < stop < activation
+          assert status < armed < legacy_stop < app_stop < stop < activation
           PY
+
+      - name: Verify predecessor pre-status cleanup
+        run: |
+          set -euo pipefail
+          TEST_ROOT="$(mktemp -d)"
+          MIGRATION_HOME="/tmp/marginalia-predecessor-migration"
+          UNRELATED_PID=""
+          cleanup() {
+            if [ -f "$MIGRATION_HOME/predecessor-owned.pid" ]; then
+              kill "$(cat "$MIGRATION_HOME/predecessor-owned.pid")" >/dev/null 2>&1 || true
+            fi
+            if [ -n "$UNRELATED_PID" ]; then
+              kill "$UNRELATED_PID" >/dev/null 2>&1 || true
+              wait "$UNRELATED_PID" 2>/dev/null || true
+            fi
+            rm -rf "$TEST_ROOT" "$MIGRATION_HOME"
+          }
+          trap cleanup EXIT
+          rm -rf "$MIGRATION_HOME"
+
+          sleep 300 &
+          UNRELATED_PID=$!
+          export UNRELATED_PID
+          cat > "$TEST_ROOT/predecessor-install.sh" <<'SH'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          legacy_root="$HOME/.marginalia/vaults/legacy-vault/.marginalia"
+          app_root="$HOME/.marginalia/runtime/.marginalia"
+          mkdir -p "$legacy_root" "$app_root" "$HOME/.local/bin"
+          cp "$(command -v sleep)" "$HOME/predecessor-owned"
+          nohup "$HOME/predecessor-owned" 300 >/dev/null 2>&1 &
+          owned_pid=$!
+          printf '%s\n' "$owned_pid" > "$HOME/predecessor-owned.pid"
+          printf '{"version":1,"pid":%s,"start_token":"owned","owner_id":"0123456789abcdef0123456789abcdef"}\n' \
+            "$owned_pid" > "$legacy_root/server.pid"
+          printf '{"version":1,"pid":%s,"start_token":"unowned","owner_id":"fedcba9876543210fedcba9876543210"}\n' \
+            "$UNRELATED_PID" > "$app_root/server.pid"
+          cat > "$HOME/.local/bin/marginalia" <<'CLI'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          printf '%s\n' "$*" >> "$HOME/predecessor-cleanup.calls"
+          case "$*" in
+            "stop --vault "*)
+              record="$HOME/.marginalia/vaults/legacy-vault/.marginalia/server.pid"
+              pid="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["pid"])' "$record")"
+              kill "$pid" >/dev/null 2>&1 || true
+              for _ in $(seq 1 100); do
+                kill -0 "$pid" >/dev/null 2>&1 || break
+                sleep 0.02
+              done
+              kill -KILL "$pid" >/dev/null 2>&1 || true
+              rm -f "$record"
+              ;;
+          esac
+          CLI
+          chmod +x "$HOME/.local/bin/marginalia"
+          SH
+          chmod +x "$TEST_ROOT/predecessor-install.sh"
+          printf '{}\n' > "$TEST_ROOT/predecessor-manifest.json"
+          export PREDECESSOR_FIXTURE_ROOT="$TEST_ROOT"
+
+          curl() {
+            local url="" output=""
+            while [ "$#" -gt 0 ]; do
+              case "$1" in
+                -o) output="$2"; shift 2 ;;
+                -*) shift ;;
+                *) url="$1"; shift ;;
+              esac
+            done
+            case "$url" in
+              */install.sh) cp "$PREDECESSOR_FIXTURE_ROOT/predecessor-install.sh" "$output" ;;
+              */release-manifest.json) cp "$PREDECESSOR_FIXTURE_ROOT/predecessor-manifest.json" "$output" ;;
+              *) return 64 ;;
+            esac
+          }
+          sha256sum() {
+            case "$1" in
+              */predecessor-install.sh)
+                printf '55127f6a3ef35e7b0ae9bc0aeb506dc3c51b6695d9dfb759f73dd018b8870866  %s\n' "$1"
+                ;;
+              */predecessor-manifest.json)
+                printf '619d45919b506757442b758a4898e865e5600c7da12d8c83677bb3080414c5d8  %s\n' "$1"
+                ;;
+              *) command sha256sum "$@" ;;
+            esac
+          }
+          export -f curl sha256sum
+
+          sed -n \
+            '/^run_predecessor_migration() (/ , /^run_release_lifecycle() {/p' \
+            test-install.sh | sed '$d' > "$TEST_ROOT/predecessor-function.sh"
+          grep -Fq 'run_predecessor_migration() (' "$TEST_ROOT/predecessor-function.sh"
+
+          set +e
+          (
+            export MARGINALIA_TEST_FAIL_PREDECESSOR_BEFORE_STATUS=1
+            export EXPECTED_VERSION="0.0.test"
+            export MANIFEST_URL="https://invalid.example/successor-manifest.json"
+            # shellcheck source=/dev/null
+            source "$TEST_ROOT/predecessor-function.sh"
+            run_predecessor_migration
+          ) > "$TEST_ROOT/output.log" 2>&1
+          result=$?
+          set -e
+          test "$result" -ne 0
+          grep -Fq 'forced predecessor failure before status' "$TEST_ROOT/output.log"
+          owned_pid="$(cat "$MIGRATION_HOME/predecessor-owned.pid")"
+          for _ in $(seq 1 100); do
+            kill -0 "$owned_pid" >/dev/null 2>&1 || break
+            sleep 0.02
+          done
+          if kill -0 "$owned_pid" >/dev/null 2>&1; then
+            echo "predecessor-owned daemon survived pre-status failure cleanup" >&2
+            exit 1
+          fi
+          kill -0 "$UNRELATED_PID"
+          grep -Fxq 'stop --timeout 10' "$MIGRATION_HOME/predecessor-cleanup.calls"
+          grep -Fxq \
+            "stop --vault $MIGRATION_HOME/.marginalia/vaults/legacy-vault --timeout 10" \
+            "$MIGRATION_HOME/predecessor-cleanup.calls"
+          printf 'BASH_PREDECESSOR_PRE_STATUS_CLEANUP_OK owned=%s unrelated=%s\n' \
+            "$owned_pid" "$UNRELATED_PID"
 
       - name: Verify checksum rejection and activation rollback
         run: |
@@ -407,8 +715,6 @@ jobs:
           export UV_TOOL_BIN_DIR="$RUNNER_TEMP/marginalia-transaction-bin"
           export UV_CACHE_DIR="$RUNNER_TEMP/uv-cache"
           export MARGINALIA_MANIFEST="$GITHUB_WORKSPACE/release-manifest.json"
-          export MARGINALIA_ONBOARD_NONINTERACTIVE=1
-          export MARGINALIA_LLM_PROVIDER=skip
           export MARGINALIA_NO_SERVE=1
           export MARGINALIA_NO_MCP=1
           export MARGINALIA_NO_UPDATE_SHELL=1
@@ -417,28 +723,126 @@ jobs:
           bash install.sh >/dev/null
           TOOL_PYTHON="$UV_TOOL_DIR/marginalia/bin/python"
           BEFORE_VERSION="$("$TOOL_PYTHON" -c 'import importlib.metadata; print(importlib.metadata.version("marginalia"))')"
-          BEFORE_CONFIG_SHA="$(sha256sum "$HOME/.marginalia/vaults/mynotes/marginalia.yaml" | awk '{print $1}')"
+          test ! -e "$HOME/.marginalia/vaults/mynotes"
 
-          GUARD_VAULT="$HOME/.marginalia/vaults/custom-port"
-          GUARD_PID_FILE="$GUARD_VAULT/.marginalia/server.pid"
+          GUARD_RUNTIME="$HOME/.marginalia/runtime"
+          GUARD_PID_FILE="$GUARD_RUNTIME/.marginalia/server.pid"
           GUARD_OUTPUT="$RUNNER_TEMP/marginalia-live-pid-guard.out"
-          mkdir -p "$(dirname "$GUARD_PID_FILE")"
-          sleep 300 &
-          GUARD_PID=$!
-          trap 'kill "$GUARD_PID" >/dev/null 2>&1 || true' EXIT
-          printf '%s\n' "$GUARD_PID" > "$GUARD_PID_FILE"
+          GUARD_READY="$RUNNER_TEMP/marginalia-live-pid-guard.ready"
+          GUARD_STOP="$RUNNER_TEMP/marginalia-live-pid-guard.stop"
+          GUARD_OWNER_LOG="$RUNNER_TEMP/marginalia-live-pid-guard-owner.log"
+          GUARD_JOB_PID=""
+          GUARD_PID=""
+          cleanup_guard_owner() {
+            [ -n "${GUARD_JOB_PID:-}" ] || return 0
+            : > "$GUARD_STOP"
+            for _ in $(seq 1 100); do
+              kill -0 "$GUARD_JOB_PID" >/dev/null 2>&1 || break
+              sleep 0.05
+            done
+            if kill -0 "$GUARD_JOB_PID" >/dev/null 2>&1; then
+              kill -KILL "$GUARD_JOB_PID" >/dev/null 2>&1 || true
+            fi
+            wait "$GUARD_JOB_PID" 2>/dev/null || true
+          }
+          trap cleanup_guard_owner EXIT
+          rm -f "$GUARD_READY" "$GUARD_STOP"
+          "$TOOL_PYTHON" - "$GUARD_RUNTIME" "$GUARD_READY" "$GUARD_STOP" \
+            >"$GUARD_OWNER_LOG" 2>&1 <<'PY' &
+          import os
+          from pathlib import Path
+          import sys
+          import time
+
+          from marginalia.server.lifecycle import PidFile
+
+          runtime_root, ready_path, stop_path = map(Path, sys.argv[1:])
+          with PidFile(runtime_root):
+              ready_path.write_text(f"{os.getpid()}\n", encoding="utf-8")
+              while not stop_path.exists():
+                  time.sleep(0.05)
+          PY
+          GUARD_JOB_PID=$!
+          for _ in $(seq 1 200); do
+            [ -s "$GUARD_READY" ] && break
+            if ! kill -0 "$GUARD_JOB_PID" >/dev/null 2>&1; then
+              wait "$GUARD_JOB_PID" 2>/dev/null || true
+              cat "$GUARD_OWNER_LOG" >&2
+              exit 1
+            fi
+            sleep 0.05
+          done
+          test -s "$GUARD_READY"
+          IFS= read -r GUARD_PID < "$GUARD_READY"
+          test "$GUARD_PID" = "$GUARD_JOB_PID"
+          validate_guard_record() {
+            "$TOOL_PYTHON" - "$GUARD_PID_FILE" "$GUARD_PID" <<'PY'
+          import json
+          from pathlib import Path
+          import sys
+
+          from marginalia.server import lifecycle
+
+          path = Path(sys.argv[1])
+          expected_pid = int(sys.argv[2])
+          payload = json.loads(path.read_text(encoding="utf-8"))
+
+
+          def fail(message: str) -> None:
+              raise SystemExit(f"invalid canonical PID record: {message}")
+
+
+          if not isinstance(payload, dict):
+              fail("payload is not an object")
+          if set(payload) != {"version", "pid", "start_token", "owner_id"}:
+              fail("payload keys do not match the canonical schema")
+          if type(payload.get("version")) is not int:
+              fail("version is not an integer")
+          if payload["version"] != lifecycle.PID_RECORD_VERSION:
+              fail("version does not match the installed lifecycle contract")
+          if type(payload.get("pid")) is not int or payload["pid"] != expected_pid:
+              fail("pid does not match the live owner")
+          if not isinstance(payload.get("start_token"), str) or not payload["start_token"]:
+              fail("start_token is missing")
+          if not isinstance(payload.get("owner_id"), str) or not payload["owner_id"]:
+              fail("owner_id is missing")
+          current_start = lifecycle._process_start_token(expected_pid)
+          if current_start is None or payload["start_token"] != current_start:
+              fail("start_token does not match the live process birth identity")
+          print(
+              "canonical application PID owner verified: "
+              f"version={payload['version']} pid={expected_pid}"
+          )
+          PY
+          }
+          validate_guard_record
+          GUARD_RECORD_SHA="$(sha256sum "$GUARD_PID_FILE" | awk '{print $1}')"
           if bash install.sh >"$GUARD_OUTPUT" 2>&1; then
             echo "installer replaced the tool despite an unverified live PID record" >&2
             exit 1
           fi
           grep -F "live Marginalia daemon (pid $GUARD_PID)" "$GUARD_OUTPUT"
-          grep -F "marginalia stop --vault $GUARD_VAULT" "$GUARD_OUTPUT"
+          grep -F "marginalia stop" "$GUARD_OUTPUT"
           kill -0 "$GUARD_PID"
+          validate_guard_record
+          test "$(sha256sum "$GUARD_PID_FILE" | awk '{print $1}')" = "$GUARD_RECORD_SHA"
           test "$("$TOOL_PYTHON" -c 'import importlib.metadata; print(importlib.metadata.version("marginalia"))')" = "$BEFORE_VERSION"
-          kill "$GUARD_PID"
-          wait "$GUARD_PID" 2>/dev/null || true
+          : > "$GUARD_STOP"
+          for _ in $(seq 1 100); do
+            kill -0 "$GUARD_JOB_PID" >/dev/null 2>&1 || break
+            sleep 0.05
+          done
+          if kill -0 "$GUARD_JOB_PID" >/dev/null 2>&1; then
+            echo "canonical PID owner did not exit cleanly" >&2
+            cat "$GUARD_OWNER_LOG" >&2
+            exit 1
+          fi
+          wait "$GUARD_JOB_PID"
+          GUARD_JOB_PID=""
+          GUARD_PID=""
+          test ! -e "$GUARD_PID_FILE"
+          rm -f "$GUARD_READY" "$GUARD_STOP" "$GUARD_OWNER_LOG"
           trap - EXIT
-          rm -f "$GUARD_PID_FILE"
 
           BAD_SHA="$(printf '0%.0s' {1..64})"
           if MARGINALIA_WHEEL_SHA256="$BAD_SHA" bash install.sh >/dev/null 2>&1; then
@@ -464,14 +868,14 @@ jobs:
 
           test "$("$TOOL_PYTHON" -c 'import importlib.metadata; print(importlib.metadata.version("marginalia"))')" = "$BEFORE_VERSION"
           test -x "$UV_TOOL_BIN_DIR/marginalia"
-          test "$(sha256sum "$HOME/.marginalia/vaults/mynotes/marginalia.yaml" | awk '{print $1}')" = "$BEFORE_CONFIG_SHA"
+          test ! -e "$HOME/.marginalia/vaults/mynotes"
           test -z "$(find "$UV_TOOL_DIR" -maxdepth 1 -name '.marginalia-installer-backup-*' -print -quit)"
           printf 'checksum rejection and rollback verified for %s\n' "$BEFORE_VERSION"
 
   powershell-syntax:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
       - name: Parse PowerShell scripts
         shell: powershell
@@ -523,7 +927,10 @@ jobs:
           }
           $previousMarkerIndex = -1
           foreach ($marker in @(
-            "WINDOWS_RELEASE_LIFECYCLE_INTERACTIVE_ONBOARDING_OK",
+            "RELEASE_LIFECYCLE_PREDECESSOR_RUNNING_OK",
+            "RELEASE_LIFECYCLE_PREDECESSOR_ROLLBACK_OK",
+            "RELEASE_LIFECYCLE_PREDECESSOR_MIGRATION_OK",
+            "WINDOWS_RELEASE_LIFECYCLE_APP_FIRST_OK",
             "RELEASE_LIFECYCLE_FRESH_INSTALL_OK",
             "RELEASE_LIFECYCLE_STATUS_UI_OK",
             "RELEASE_LIFECYCLE_STOPPED_UPDATE_OK",
@@ -546,6 +953,10 @@ jobs:
             $previousMarkerIndex = $matches[0].Index
           }
           foreach ($required in @(
+            '19847892b7e129225011d21d6d1f2ce00f996458',
+            '6856a0bac3c424a06ce865e2adff1a28906c8e3cbe7ea9603cddae92b08fa29d',
+            '619d45919b506757442b758a4898e865e5600c7da12d8c83677bb3080414c5d8',
+            'Invoke-PredecessorMigration $InstallUrl $ExpectedVersion $ManifestUrl $TestHome',
             '.release-lifecycle-previous-tool-sentinel',
             'RELEASE_LIFECYCLE_PREVIOUS_TOOL_SENTINEL_SHA256=',
             '$Profile -in @("interactive", "release-lifecycle")',
@@ -558,7 +969,7 @@ jobs:
             '$env:UV_PYTHON_CACHE_DIR = Join-Path $TestHome ".uv\python-cache"',
             '$env:XDG_BIN_HOME = Join-Path $TestHome ".local\bin"',
             '$env:MARGINALIA_MANIFEST = $ManifestUrl',
-            '$env:MARGINALIA_PACKS = "core,research,personal"',
+            'Remove-Item Env:MARGINALIA_VAULT -ErrorAction SilentlyContinue',
             'Export-PublicEvidence',
             'Initialize-TestSandbox',
             'Invoke-ReleaseLifecycle $sandboxCli'
@@ -581,6 +992,151 @@ jobs:
             throw "Windows same-version refusal sentinel contract is incomplete"
           }
           if ($failed) { throw "PowerShell syntax validation failed" }
+
+      - name: Verify predecessor pre-status cleanup
+        shell: powershell
+        run: |
+          $tester = Get-Content -Raw -LiteralPath "test-install.ps1"
+          $childMatch = [regex]::Match(
+            $tester,
+            '(?s)\$child = @''\r?\n(?<child>.*?)\r?\n''@'
+          )
+          if (-not $childMatch.Success) {
+            throw "test-install.ps1 child runner here-string was not found"
+          }
+          $childTokens = $null
+          $childErrors = $null
+          $childAst = [System.Management.Automation.Language.Parser]::ParseInput(
+            $childMatch.Groups["child"].Value,
+            [ref]$childTokens,
+            [ref]$childErrors
+          )
+          if ($childErrors.Count -gt 0) {
+            throw "generated Windows child runner did not parse"
+          }
+          foreach ($functionName in @(
+            "Test-ChildProcessAlive",
+            "Test-ChildTcpPort",
+            "Read-TestServerProcessId",
+            "Invoke-PredecessorMigration"
+          )) {
+            $functionAst = $childAst.Find(
+              {
+                param($node)
+                $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+                  $node.Name -eq $functionName
+              },
+              $true
+            )
+            if ($null -eq $functionAst) { throw "$functionName is missing" }
+            . ([scriptblock]::Create($functionAst.Extent.Text))
+          }
+
+          function Invoke-WebRequest {
+            param(
+              [switch]$UseBasicParsing,
+              [string]$Uri,
+              [string]$OutFile
+            )
+            Set-Content -LiteralPath $OutFile -Value $Uri -Encoding ASCII
+          }
+          function Get-FileHash {
+            param(
+              [string]$Algorithm,
+              [string]$LiteralPath
+            )
+            $hash = if ((Split-Path -Leaf $LiteralPath) -eq "predecessor-install.ps1") {
+              "6856a0bac3c424a06ce865e2adff1a28906c8e3cbe7ea9603cddae92b08fa29d"
+            } else {
+              "619d45919b506757442b758a4898e865e5600c7da12d8c83677bb3080414c5d8"
+            }
+            return [pscustomobject]@{ Hash = $hash }
+          }
+          function Invoke-RawInstallerProcess {
+            param([string]$Url, [string]$OutputPath)
+            $legacyRoot = Join-Path $env:HOME ".marginalia\vaults\legacy-vault\.marginalia"
+            $appRoot = Join-Path $env:HOME ".marginalia\runtime\.marginalia"
+            $toolBin = Join-Path $env:HOME ".uv\bin"
+            New-Item -ItemType Directory -Force -Path $legacyRoot, $appRoot, $toolBin | Out-Null
+            $daemon = Join-Path $env:HOME "predecessor-owned.exe"
+            Copy-Item -LiteralPath (Join-Path $env:SystemRoot "System32\PING.EXE") -Destination $daemon
+            $owned = Start-Process -FilePath $daemon -ArgumentList @("-t", "127.0.0.1") `
+              -WindowStyle Hidden -PassThru
+            $script:PredecessorOwnedProcessId = $owned.Id
+            Set-Content -LiteralPath (Join-Path $env:HOME "predecessor-owned.pid") `
+              -Value ([string]$owned.Id) -Encoding ASCII
+            $ownedRecord = @{
+              version = 1
+              pid = $owned.Id
+              start_token = "owned"
+              owner_id = "0123456789abcdef0123456789abcdef"
+            } | ConvertTo-Json -Compress
+            $unownedRecord = @{
+              version = 1
+              pid = $script:UnrelatedProcessId
+              start_token = "unowned"
+              owner_id = "fedcba9876543210fedcba9876543210"
+            } | ConvertTo-Json -Compress
+            Set-Content -LiteralPath (Join-Path $legacyRoot "server.pid") `
+              -Value $ownedRecord -Encoding ASCII
+            Set-Content -LiteralPath (Join-Path $appRoot "server.pid") `
+              -Value $unownedRecord -Encoding ASCII
+            @(
+              '@echo off',
+              'echo %*>> "%HOME%\predecessor-cleanup.calls"',
+              'for /f "usebackq delims=" %%p in ("%HOME%\predecessor-owned.pid") do taskkill /PID %%p /F >nul 2>&1',
+              'exit /b 0'
+            ) | Set-Content -LiteralPath (Join-Path $toolBin "marginalia.cmd") -Encoding ASCII
+            return 0
+          }
+
+          $testRoot = Join-Path $env:RUNNER_TEMP "marginalia-predecessor-prestatus"
+          $originalHome = [Environment]::GetEnvironmentVariable("HOME", "Process")
+          $unrelated = Start-Process -FilePath (Join-Path $PSHOME "powershell.exe") `
+            -ArgumentList @("-NoProfile", "-Command", "Start-Sleep -Seconds 300") `
+            -WindowStyle Hidden -PassThru
+          $script:UnrelatedProcessId = $unrelated.Id
+          $script:PredecessorOwnedProcessId = 0
+          try {
+            $failure = ""
+            try {
+              Invoke-PredecessorMigration `
+                "https://invalid.example/successor.ps1" `
+                "0.0.test" `
+                "https://invalid.example/manifest.json" `
+                $testRoot `
+                -FailAfterInstallBeforeStatus
+            } catch {
+              $failure = $_.Exception.Message
+            }
+            if ($failure -ne "forced predecessor failure before status") {
+              throw "pre-status failure injection was not observed: $failure"
+            }
+            if ($script:PredecessorOwnedProcessId -le 0 -or
+                (Test-ChildProcessAlive $script:PredecessorOwnedProcessId)) {
+              throw "predecessor-owned daemon survived pre-status failure cleanup"
+            }
+            if (-not (Test-ChildProcessAlive $script:UnrelatedProcessId)) {
+              throw "pre-status cleanup terminated an unrelated process"
+            }
+            $migrationHome = Join-Path $testRoot "predecessor-migration"
+            $calls = @(Get-Content -LiteralPath (Join-Path $migrationHome "predecessor-cleanup.calls"))
+            if ($calls.Count -ne 1 -or
+                $calls[0] -notmatch '^stop --vault .+ --timeout 30$') {
+              throw "pre-status cleanup did not limit CLI shutdown to the owned predecessor: $calls"
+            }
+            if ([Environment]::GetEnvironmentVariable("HOME", "Process") -ne $originalHome) {
+              throw "pre-status cleanup did not restore the caller environment"
+            }
+            Write-Host "WINDOWS_PREDECESSOR_PRE_STATUS_CLEANUP_OK owned=$($script:PredecessorOwnedProcessId) unrelated=$($script:UnrelatedProcessId)"
+          } finally {
+            foreach ($processId in @($script:PredecessorOwnedProcessId, $script:UnrelatedProcessId)) {
+              if ($processId -gt 0) {
+                Stop-Process -Id $processId -Force -ErrorAction SilentlyContinue
+              }
+            }
+            Remove-Item -LiteralPath $testRoot -Recurse -Force -ErrorAction SilentlyContinue
+          }
 
       - name: Verify Claude MCP registration parsing
         shell: powershell
@@ -765,7 +1321,11 @@ jobs:
             "Test-ProcessAlive",
             "Read-ServerProcessId",
             "Find-DaemonLockRoot",
-            "Assert-NoUndiscoveredLiveDaemon"
+            "Get-LegacyVaultPaths",
+            "Find-UnverifiedLiveLegacyDaemon",
+            "Find-VerifiedLegacyLockRoot",
+            "Assert-NoUndiscoveredLiveDaemon",
+            "Assert-ValidPreseedInputs"
           )) {
             $functionAst = $ast.Find(
               {
@@ -777,6 +1337,22 @@ jobs:
             )
             if ($null -eq $functionAst) { throw "$functionName is missing" }
             . ([scriptblock]::Create($functionAst.Extent.Text))
+          }
+
+          function Die([string]$Message) { throw $Message }
+          $oldProvider = $env:MARGINALIA_LLM_PROVIDER
+          try {
+            $Vault = ""
+            $env:MARGINALIA_LLM_PROVIDER = "skip"
+            $preseedError = ""
+            try { Assert-ValidPreseedInputs } catch { $preseedError = $_.Exception.Message }
+            if (-not $preseedError.Contains("MARGINALIA_LLM_PROVIDER requires MARGINALIA_VAULT")) {
+              throw "provider preseed without a vault was not rejected: $preseedError"
+            }
+            $Vault = "mynotes"
+            Assert-ValidPreseedInputs
+          } finally {
+            $env:MARGINALIA_LLM_PROVIDER = $oldProvider
           }
 
           $temp = Join-Path $env:RUNNER_TEMP "marginalia-server.pid"
@@ -803,18 +1379,18 @@ jobs:
 
           $HomeRoot = Join-Path $env:RUNNER_TEMP "marginalia-pid-guard-home"
           $RestUrl = "http://127.0.0.1:7777"
-          $vaultPath = Join-Path $HomeRoot "vaults\custom-port-vault"
-          $recordPath = Join-Path $vaultPath ".marginalia\server.pid"
+          $DaemonRuntimeRoot = Join-Path $HomeRoot "runtime"
+          $DaemonPidFile = Join-Path $DaemonRuntimeRoot ".marginalia\server.pid"
+          $recordPath = $DaemonPidFile
           New-Item -ItemType Directory -Force -Path (Split-Path -Parent $recordPath) | Out-Null
           Set-Content -LiteralPath $recordPath -Value ("{`"version`":1,`"pid`":$PID}") -Encoding ASCII
-          $lockRoot = Find-DaemonLockRoot $PID $vaultPath
-          if ($lockRoot -ne $vaultPath) {
-            throw "authenticated PID did not resolve to its lifecycle lock root: $lockRoot"
+          $lockRoot = Find-DaemonLockRoot $PID
+          if ($lockRoot -ne $DaemonRuntimeRoot) {
+            throw "application PID did not resolve to its lifecycle lock root: $lockRoot"
           }
-          if (Find-DaemonLockRoot ($PID + 1) $vaultPath) {
+          if (Find-DaemonLockRoot ($PID + 1)) {
             throw "a mismatched PID was accepted as the lifecycle lock owner"
           }
-          function Die([string]$Message) { throw $Message }
           function Get-MarginaliaCommand { return $null }
           $guardError = ""
           try {
@@ -824,7 +1400,7 @@ jobs:
           } finally {
             Remove-Item -LiteralPath $HomeRoot -Recurse -Force -ErrorAction SilentlyContinue
           }
-          $expectedStop = "marginalia stop --vault `"$vaultPath`""
+          $expectedStop = "marginalia stop"
           if (-not $guardError.Contains($expectedStop)) {
             throw "live PID guard did not provide exact quoted stop guidance: $guardError"
           }
@@ -832,15 +1408,44 @@ jobs:
             throw "live PID guard did not provide custom-port guidance: $guardError"
           }
 
+          $HomeRoot = Join-Path $env:RUNNER_TEMP "marginalia-legacy-pid-guard-home"
+          $legacyVault = Join-Path (Join-Path $HomeRoot "vaults") "legacy-vault"
+          $legacyRecord = Join-Path $legacyVault ".marginalia\server.pid"
+          New-Item -ItemType Directory -Force -Path (Split-Path -Parent $legacyRecord) | Out-Null
+          Set-Content -LiteralPath (Join-Path $legacyVault "marginalia.yaml") -Value "vault_id: legacy-vault" -Encoding ASCII
+          # Exercise the pre-versioned integer fallback explicitly. The real
+          # immutable-0.0.40 migration driver uses its canonical locked JSON record.
+          Set-Content -LiteralPath $legacyRecord -Value ([string]$PID) -Encoding ASCII
+          $script:PreviousCommand = ""
+          $script:PreviousVersion = "0.0.40"
+          try {
+            if ((Find-VerifiedLegacyLockRoot $PID $legacyVault) -ne $legacyVault) {
+              throw "verified legacy-fallback PID did not resolve to its vault lock"
+            }
+            $legacy = Find-UnverifiedLiveLegacyDaemon
+            if ($null -eq $legacy -or [int]$legacy.pid -ne $PID -or
+                [string]$legacy.vault -ne $legacyVault) {
+              throw "live legacy-fallback PID was not discovered"
+            }
+            $legacyGuardError = ""
+            try { Assert-NoUndiscoveredLiveDaemon } catch { $legacyGuardError = $_.Exception.Message }
+            if (-not $legacyGuardError.Contains("Marginalia 0.0.40") -or
+                -not $legacyGuardError.Contains("marginalia stop --vault")) {
+              throw "legacy-fallback PID guard was incomplete: $legacyGuardError"
+            }
+          } finally {
+            Remove-Item -LiteralPath $HomeRoot -Recurse -Force -ErrorAction SilentlyContinue
+          }
+
           $source = Get-Content -Raw -LiteralPath "install.ps1"
-          $statusIndex = $source.IndexOf('$status = Get-AuthenticatedStatus')
+          $statusIndex = $source.IndexOf('$status = Get-DaemonStatus')
           $guardIndex = $source.IndexOf('Assert-NoUndiscoveredLiveDaemon', $statusIndex)
           $activationIndex = $source.IndexOf('Step "Activating staged Marginalia', $statusIndex)
           if ($statusIndex -lt 0 -or $guardIndex -le $statusIndex -or $activationIndex -le $guardIndex) {
             throw "live PID guard must run after status discovery and before activation"
           }
-          if (-not $source.Contains('marginalia stop --vault `"$vaultPath`"')) {
-            throw "live PID guard is missing the exact quoted stop guidance"
+          if (-not $source.Contains('Run: marginalia stop.')) {
+            throw "live PID guard is missing app-scoped stop guidance"
           }
           if (-not $source.Contains('Custom endpoint/ports may require manual stop.')) {
             throw "live PID guard is missing custom-port guidance"
@@ -850,22 +1455,27 @@ jobs:
         shell: powershell
         run: |
           $install = Get-Content -Raw -LiteralPath "install.ps1"
-          $statusIndex = $install.IndexOf('$status = Get-AuthenticatedStatus')
+          $statusIndex = $install.IndexOf('$status = Get-DaemonStatus')
           $lockRootIndex = $install.IndexOf('$oldLockRoot = Find-DaemonLockRoot', $statusIndex)
           $previousPidIndex = $install.IndexOf('$script:PreviousProcessId = $oldPid', $lockRootIndex)
           $preStopArmIndex = $install.IndexOf('$script:TransactionArmed = $true', $previousPidIndex)
-          $oldStopIndex = $install.IndexOf('& $stageCli stop --vault $oldLockRoot --timeout 30', $previousPidIndex)
+          $stopArgsIndex = $install.IndexOf('$stopArgs = @("stop", "--timeout", "30")', $previousPidIndex)
+          $oldStopIndex = $install.IndexOf('& $stageCli @stopArgs', $stopArgsIndex)
           $activationIndex = $install.IndexOf('Step "Activating staged Marginalia', $oldStopIndex)
           if ($statusIndex -lt 0 -or $lockRootIndex -le $statusIndex -or
               $previousPidIndex -le $lockRootIndex -or
               $preStopArmIndex -le $previousPidIndex -or
-              $oldStopIndex -le $preStopArmIndex -or
+              $stopArgsIndex -le $preStopArmIndex -or $oldStopIndex -le $stopArgsIndex -or
               $activationIndex -le $oldStopIndex) {
             throw "PID lock ownership and rollback must be established before staged shutdown"
           }
           foreach ($required in @(
-            'authenticated daemon status reported pid $oldPid, but its lifecycle lock could not be found',
-            'Stop it first: marginalia stop --vault `"$oldLockRoot`"',
+            'Marginalia status reported pid $oldPid, but its application lifecycle lock could not be verified',
+            'Marginalia 0.0.40 status reported pid $oldPid',
+            'Find-VerifiedLegacyLockRoot $oldPid $statusVault',
+            '$script:PreviousDaemonVault = $statusVault',
+            '$stopArgs = @("stop", "--vault", $script:PreviousDaemonVault, "--timeout", "30")',
+            'Stop it first: marginalia stop',
             'could not stop the verified daemon (pid $oldPid)'
           )) {
             if (-not $install.Contains($required)) {
@@ -911,7 +1521,6 @@ jobs:
           function Test-ProcessAlive([int]$ProcessId) { return $true }
           function Info([string]$Message) { $script:RestoreInfo = $Message }
           $script:WasRunning = $true
-          $script:RollbackVault = "test-vault"
           $script:ActivationStarted = $false
           $script:PreviousProcessId = 4242
           $script:PreviousStopRequested = $true
@@ -970,6 +1579,7 @@ jobs:
             "UV_NO_MODIFY_PATH",
             "UV_PYTHON_NO_REGISTRY",
             "UV_PYTHON_INSTALL_REGISTRY",
+            "MARGINALIA_NO_OPEN",
             "TEMP",
             "TMP",
             "XDG_BIN_HOME"

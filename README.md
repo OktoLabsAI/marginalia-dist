@@ -4,6 +4,14 @@ One-shot installer for [Marginalia](https://github.com/OktoLabsAI/marginalia), a
 local-first knowledge graph you can drive from Claude Code (MCP), the CLI, or as
 a Python library.
 
+The current public prerelease is `0.0.41`: source tag
+`aae59db84c2abd0e915ac4cb72c08e60209abe34`, wheel
+[`marginalia-0.0.41-py3-none-any.whl`](https://github.com/OktoLabsAI/marginalia-dist/releases/download/v0.0.41/marginalia-0.0.41-py3-none-any.whl),
+SHA-256 `6842a55fe5e1180c67e81035342ee8b300f5ff2ce2aafbe48129d709a76dbfa6`.
+Linux exact-SHA evidence will be added after its release rehearsal. The final real interactive
+Windows PowerShell 5.1 rehearsal remains the only deferred release check, so `0.0.41` stays a
+prerelease until that evidence exists.
+
 ## Install On macOS Or Linux
 
 ```bash
@@ -16,20 +24,24 @@ curl -fsSL https://raw.githubusercontent.com/OktoLabsAI/marginalia-dist/main/ins
 powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/OktoLabsAI/marginalia-dist/main/install.ps1 | iex"
 ```
 
-This takes a fresh machine from zero to a running daemon wired into Claude Code:
+This takes a fresh machine from zero to a running application wired into Claude Code:
 
 1. installs [`uv`](https://docs.astral.sh/uv/) if missing and pins Python 3.12 (uv-managed — your system Python is untouched);
 2. downloads the released Marginalia wheel and installs the `marginalia` + `kg` commands;
-3. creates a vault (`~/.marginalia/vaults/mynotes`);
-4. runs `marginalia onboard`, a provider-first wizard for auto-detect, LM Studio, Ollama, LiteLLM Proxy, OpenRouter, OpenAI, Gemini, Anthropic, custom endpoints, or skip;
-5. starts the server (web UI/REST on `:7777`, MCP on `:8201`);
-6. registers Claude Code with the daemon's private capability token.
+3. starts one application daemon without forcing a process-global vault (web UI/REST on `:7777`, MCP on `:8201`);
+4. opens the plain loopback UI directly in your default browser;
+5. lets you create, select, configure, and delete managed vaults inside the application;
+6. registers Claude Code with the application-scoped MCP capability token.
+
+Browser access on loopback does not use a cookie, bootstrap command, or URL token.
+The MCP endpoint remains separately protected by its Bearer token.
 
 ## Requirements
 
 - macOS or Linux with `curl` and `bash`, or Windows with PowerShell
 - An LLM provider is optional: `explore` works without one, while `ask` and
-  `remember` require one configured by `marginalia onboard`.
+  `remember` require one configured in the Web UI. `marginalia onboard` remains an explicit
+  compatibility path for automation and installer preseeding.
 
 ## Options
 
@@ -37,8 +49,8 @@ Everything is overridable by environment variable — useful under `curl … | b
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `MARGINALIA_VAULT` | `mynotes` | vault name |
-| `MARGINALIA_PACKS` | `core,research,personal` | type packs |
+| `MARGINALIA_VAULT` | — | optional compatibility preseed: create this vault and run CLI onboarding before opening the app |
+| `MARGINALIA_PACKS` | `core,research,personal` | compatibility-preseed type packs; requires `MARGINALIA_VAULT` |
 | `MARGINALIA_LLM_PROVIDER` | — | provider id passed to `marginalia onboard` |
 | `MARGINALIA_LLM_API_BASE` | — | provider base URL |
 | `MARGINALIA_LLM_MODEL` | — | model name; also skips model discovery |
@@ -46,15 +58,20 @@ Everything is overridable by environment variable — useful under `curl … | b
 | `MARGINALIA_LLM_ALLOW_REMOTE` | — | `1` = confirm non-loopback LLM egress |
 | `MARGINALIA_ONBOARD_NONINTERACTIVE` | — | `1` = run onboarding without prompts |
 | `MARGINALIA_WHEEL` | — | install a specific wheel path/URL |
-| `MARGINALIA_EXPECTED_VERSION` | `0.0.40` | required version check; override with `MARGINALIA_WHEEL` for another release |
+| `MARGINALIA_EXPECTED_VERSION` | current release | required version check; override with `MARGINALIA_WHEEL` for another release |
 | `MARGINALIA_MANIFEST` | release manifest on this repository's `main` | manifest path/URL supplying wheel URL, version, and SHA-256 |
 | `MARGINALIA_WHEEL_SHA256` | manifest SHA-256 | required when using a custom wheel without a manifest |
 | `MARGINALIA_NO_SERVE` | — | `1` = install + configure only |
+| `MARGINALIA_NO_OPEN` | — | `1` = start the verified daemon without opening a browser |
 | `MARGINALIA_NO_MCP` | — | `1` = don't run `claude mcp add` |
 
-Example, fully non-interactive skip on macOS/Linux:
+The normal app-first installation needs no provider or vault environment variables.
+For compatibility automation that intentionally preseeds a vault, set
+`MARGINALIA_VAULT` and the onboarding options explicitly. Example, fully
+non-interactive skip on macOS/Linux:
 
 ```bash
+MARGINALIA_VAULT=mynotes \
 MARGINALIA_ONBOARD_NONINTERACTIVE=1 \
 MARGINALIA_LLM_PROVIDER=skip \
   bash -c 'curl -fsSL https://raw.githubusercontent.com/OktoLabsAI/marginalia-dist/main/install.sh | bash'
@@ -63,6 +80,7 @@ MARGINALIA_LLM_PROVIDER=skip \
 Example, fully non-interactive local endpoint on macOS/Linux:
 
 ```bash
+MARGINALIA_VAULT=mynotes \
 MARGINALIA_ONBOARD_NONINTERACTIVE=1 \
 MARGINALIA_LLM_PROVIDER=custom \
 MARGINALIA_LLM_API_BASE=http://localhost:1234/v1 \
@@ -73,6 +91,7 @@ MARGINALIA_LLM_MODEL=my-model \
 Example, fully non-interactive on Windows:
 
 ```powershell
+$env:MARGINALIA_VAULT = "mynotes"
 $env:MARGINALIA_LLM_API_BASE = "http://localhost:1234/v1"
 $env:MARGINALIA_LLM_MODEL = "my-model"
 $env:MARGINALIA_ONBOARD_NONINTERACTIVE = "1"
@@ -81,27 +100,20 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubus
 
 ## Direct AWS Bedrock
 
-The public installer stays provider-neutral by default: it installs
-`embeddings,ladybug,mcp,litellm`, creates or selects the vault, and delegates
-provider setup to `marginalia onboard`. It does not install AWS SDK dependencies
-or write Bedrock-specific `llm:` YAML.
+The installer stays provider-neutral by default: it installs the complete
+`serve` application aggregate plus `litellm`, then leaves vault and provider
+management to the application. If `MARGINALIA_VAULT` is explicitly set, it
+delegates that compatibility preseed to `marginalia onboard`. It does not install
+AWS SDK dependencies or write Bedrock-specific `llm:` YAML.
 
 If you configure direct `provider: bedrock` and Marginalia reports that `boto3`
-is missing, reinstall the tool with the opt-in `bedrock` extra, then rerun
-onboarding for the same vault:
+is missing, reinstall the tool with the opt-in `bedrock` extra, then configure the same vault in
+the Web UI. Explicit preseed automation may instead rerun `marginalia onboard`:
 
-```bash
-marginalia stop --vault mynotes || true
-uv tool install --force --python 3.12 \
-  "https://github.com/OktoLabsAI/marginalia-dist/releases/download/v0.0.40/marginalia-0.0.40-py3-none-any.whl[embeddings,ladybug,mcp,litellm,bedrock]"
-marginalia onboard --vault mynotes --reconfigure
-```
-
-```powershell
-marginalia stop --vault mynotes
-uv tool install --force --python 3.12 "https://github.com/OktoLabsAI/marginalia-dist/releases/download/v0.0.40/marginalia-0.0.40-py3-none-any.whl[embeddings,ladybug,mcp,litellm,bedrock]"
-marginalia onboard --vault mynotes --reconfigure
-```
+Stop the application daemon, reinstall the exact released wheel URL from
+`release-manifest.json` with `[serve,litellm,bedrock]`, then restart the app and
+configure the vault. Do not substitute the unrelated `marginalia` project on
+PyPI for the manifest's wheel URL.
 
 If you installed from a specific `MARGINALIA_WHEEL` or `MARGINALIA_SRC`, reuse
 that same wheel URL or source checkout and add `bedrock` to the extras list, for
@@ -109,12 +121,13 @@ example:
 
 ```bash
 uv tool install --force --python 3.12 \
-  "<wheel-url>[embeddings,ladybug,mcp,litellm,bedrock]"
+  "<wheel-url>[serve,litellm,bedrock]"
 ```
 
 AWS credentials and any remote endpoint approval remain outside the installer.
-Use `marginalia onboard` for provider/model configuration, and pass
-`--allow-remote-llm --yes` only for explicit noninteractive remote setup.
+Use the Web UI for normal provider/model configuration. For explicit noninteractive preseed
+automation, use `marginalia onboard` and pass `--allow-remote-llm --yes` only when approving remote
+setup.
 
 ## Safe Onboarding Test
 
@@ -140,7 +153,7 @@ examples keep the new sandbox so the current `capture-pane` evidence remains;
 add `--cleanup` only for throwaway smoke runs.
 
 ```bash
-# Local-only lifecycle preflight; final evidence must use the exact-SHA command below.
+# Unpinned current-main preflight; final evidence must use the exact-SHA command below.
 ./test-install.sh --docker-tmux --profile release-lifecycle
 ./test-install.sh --docker-tmux --profile skip
 ./test-install.sh --docker-tmux --profile auto-lm-studio
@@ -184,10 +197,17 @@ bash /tmp/marginalia-test-install.sh --docker-tmux \
 The tester byte-compares itself with the exact public raw driver, pins the
 installer and manifest to that same commit, and records all three URLs and
 SHA-256 values in the pane. In one fresh Ubuntu container and one real tmux TTY
-it verifies
-authenticated status, an authenticated SPA fetch, and `marginalia ui --no-open`,
+it first SHA-verifies the immutable v0.0.40 installer and manifest at dist commit
+`19847892b7e129225011d21d6d1f2ce00f996458`, runs that predecessor with its
+vault-scoped PID/token, forces successor activation to fail, and proves the exact
+0.0.40 tool and daemon are restored. It then completes the real migration to the
+successor's application-scoped PID/token and plain UI before starting the fresh
+install lifecycle. That lifecycle verifies
+application status, a plain loopback SPA fetch, and `marginalia ui --no-open`,
+proves the default install starts with no forced vault, then creates a managed
+vault for lifecycle testing,
 exercises stopped and running updates, proves
-custom-port and unverified-live-PID refusal before replacement, injects an
+custom-port refusal and refusal of a canonical locked application PID owner before replacement, injects an
 activation failure, and verifies exact tool/config/daemon rollback. A
 previous-tool-only sentinel with a stable recorded hash proves restoration even
 when the candidate and previous package have the same version. The rehearsal
@@ -197,7 +217,9 @@ the individual `RELEASE_LIFECYCLE_*_OK` markers identify every required phase.
 This profile is Linux-only and does not replace the separate real interactive
 Windows PowerShell rehearsal.
 
-The final Linux rehearsal fetched the driver from exact public dist commit
+### Immutable historical v0.0.40 evidence
+
+The final v0.0.40 Linux rehearsal fetched the driver from exact public dist commit
 `3764845c7f92cae13e6f2b3b289665a06696d921`, after all three jobs in
 [`distribution-gate` run 29265687564](https://github.com/OktoLabsAI/marginalia-dist/actions/runs/29265687564)
 passed on that SHA. Its retained transcript is
@@ -208,6 +230,13 @@ URLs plus their SHA-256 values; contains every lifecycle marker exactly once,
 including `RELEASE_LIFECYCLE_PREVIOUS_TOOL_SENTINEL_OK`; records sentinel SHA-256
 `478c57d828b23e24c31834f8d49aeafa8822fac5421d4266670216f38d2222b5`.
 The final line records tmux pane status 0.
+
+That transcript is retained as immutable evidence for the already-published
+v0.0.40 artifact. Its authenticated-browser wording describes that historical
+wheel and is not evidence for the successor's plain loopback UI or app-scoped
+multi-vault lifecycle. The successor requires a new exact-SHA Linux rehearsal
+and evidence record; the v0.0.40 tag, manifest history, wheel, and transcript
+must not be replaced.
 
 The evidence, workflow, and this record must be committed together on `main`,
 and every `distribution-gate` job must pass on that exact evidence commit before
@@ -235,12 +264,14 @@ Claude MCP registration, prevents uv from modifying the user PATH or Windows
 Python registry, runs the public raw `install.ps1` URL, and writes a transcript
 under its uniquely owned temp sandbox. For release-lifecycle, the driver
 byte-compares itself with the exact public raw commit and pins `install.ps1`
-and `release-manifest.json` to that same SHA. The profile requires
-`INPUT_REDIRECTED=False`: at the live provider prompt, enter `0` to select
-`Skip LLM setup`. The tester verifies that this choice was made interactively,
-then must end with `WINDOWS_RELEASE_LIFECYCLE_OK`. Its phase markers cover
-interactive onboarding, fresh install, authenticated status and SPA/UI access,
-stopped and running updates, custom-port refusal, unverified-live-PID refusal,
+and `release-manifest.json` to that same SHA. The profile requires the real
+Windows PowerShell 5.1 host and records `INPUT_REDIRECTED=False`; it does not
+prompt because the default installation is app-first. It must end with
+`WINDOWS_RELEASE_LIFECYCLE_OK`. Its phase markers first prove the same exact
+immutable-v0.0.40 running predecessor, forced-failure rollback, and successful
+application-scope migration as Linux. They then cover app-first installation with
+no forced vault, managed-vault creation, plain status and SPA/UI access,
+stopped and running updates, custom-port refusal, canonical locked application-owner refusal,
 hash-verified restoration of a previous-tool-only sentinel after forced
 activation failure, and final stop. Retain the sandbox; do not add `-Cleanup`
 to the evidence run. Publish only the deterministic `*.public.log` sanitized
@@ -262,12 +293,12 @@ release-lifecycle evidence.
 
 ## After install
 
-- Web UI: `marginalia ui` (opens an authenticated browser session)
+- Web UI: `http://127.0.0.1:7777/` (opened automatically; `marginalia ui` reopens it)
 - In Claude Code: *"remember this note: …"* then *"ask Marginalia about …"*
 - Status: `marginalia status`
-- Stop: `marginalia stop --vault mynotes`
-- Update: rerun the installer. It preserves a stopped daemon, or drains and
-  restarts the same active vault when the daemon was running.
+- Stop: `marginalia stop`
+- Update: rerun the installer. It preserves a stopped application daemon, or
+  drains and restarts the app without retargeting vault work.
 - Uninstall the command: `uv tool uninstall marginalia` (vault data under
   `~/.marginalia` is intentionally left in place).
 
@@ -275,10 +306,13 @@ Install and update are transactional. The release wheel is downloaded and
 checked against `release-manifest.json`, then installed and smoke-tested in a
 temporary environment before the current daemon is stopped. The previous uv
 tool environment and command launchers are retained until the new package,
-version, and requested daemon state are verified. Any activation or restart
+version, and requested application-daemon state are verified. Any activation or restart
 failure restores the exact previous tool; a previously running daemon is also
-restarted. Vaults and provider configuration are outside this transaction and
-are never replaced.
+restarted. The one-release v0.0.40 compatibility seam recognizes only a verified
+matching vault-scoped lifecycle lock, refuses custom-port or unverified legacy
+processes before replacement, and restarts the old CLI without assuming newer
+`--no-open` support. Vaults and provider configuration are outside this
+transaction and are never replaced.
 
 When overriding `MARGINALIA_WHEEL`, also provide a matching
 `MARGINALIA_MANIFEST` or `MARGINALIA_WHEEL_SHA256`, and override
@@ -287,11 +321,24 @@ When overriding `MARGINALIA_WHEEL`, also provide a matching
 The installer creates an authenticated user-scope Claude MCP entry. Do not add
 the raw `:8201/mcp` URL without its Bearer header; it will correctly return
 `401 Unauthorized`. To pin a project to another vault, add a project-scope HTTP
-entry with `?vault=<name>` and the same token from that vault's private
-`.marginalia/daemon.token` file.
+entry with `?vault=<name>` and the application token from
+`~/.marginalia/daemon-7777.token`.
 
-## Connect multiple projects (multi-vault)
+## Connect multiple projects
 
-One daemon serves many vaults. Each MCP connection selects its own via `?vault=`
-(a registered name, or a loopback-only absolute path). Create more vaults with
-`marginalia vault create <name> --use`, or the `init_vault` MCP tool.
+One daemon serves many vaults. Browser tabs select a vault independently inside
+the app; switching one tab does not retarget curator, ingest, watch, or MCP work
+already running for another vault. Create and select managed vaults in the UI.
+Managed vault deletion requires exact-name confirmation and removes only vaults
+created by Marginalia; adopted/external paths are protected from deletion.
+
+Each MCP connection selects its vault via `?vault=` (a registered name, or a
+loopback-only absolute path). The configured default remains a compatibility
+fallback for unscoped CLI/MCP clients, not a process-global server selection.
+
+LLM and embedding provider keys use the same managed credential flow in the UI.
+Keys are entered as secrets and are never written into vault YAML; explicit
+environment-variable references remain available as an advanced configuration
+option. POSIX stores managed values in an owner-only environment file; Windows stores each value as
+a CurrentUser-DPAPI envelope so plaintext is absent at rest. The embedding connection test performs
+a real provider call and returns metadata only, never the key or vector payload.

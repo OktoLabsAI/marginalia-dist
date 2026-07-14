@@ -8,7 +8,7 @@ param(
     [string]$InstallUrl = $(if ($env:MARGINALIA_INSTALL_URL) { $env:MARGINALIA_INSTALL_URL } else { "https://raw.githubusercontent.com/OktoLabsAI/marginalia-dist/main/install.ps1" }),
     [string]$TestHome = $(if ($env:MARGINALIA_TEST_HOME) { $env:MARGINALIA_TEST_HOME } else { Join-Path ([IO.Path]::GetTempPath()) ("marginalia-install-test-" + (Get-Date -Format "yyyyMMdd-HHmmss") + "-" + [guid]::NewGuid().ToString("N")) }),
     [string]$Vault = $(if ($env:MARGINALIA_VAULT) { $env:MARGINALIA_VAULT } else { "mynotes" }),
-    [string]$ExpectedVersion = $(if ($env:MARGINALIA_EXPECTED_VERSION) { $env:MARGINALIA_EXPECTED_VERSION } else { "0.0.40" }),
+    [string]$ExpectedVersion = $(if ($env:MARGINALIA_EXPECTED_VERSION) { $env:MARGINALIA_EXPECTED_VERSION } else { "0.0.41" }),
     [ValidateSet("interactive", "skip", "custom", "release-lifecycle")]
     [string]$Profile = "interactive",
     [string]$ApiBase = "",
@@ -81,8 +81,7 @@ function Read-TestServerProcessId([string]$Path) {
 }
 
 function Stop-TestDaemon([string]$HomePath, [string]$VaultName, [string]$ToolBin) {
-    $vaultPath = Join-Path (Join-Path (Join-Path $HomePath ".marginalia") "vaults") $VaultName
-    $recordPath = Join-Path $vaultPath ".marginalia\server.pid"
+    $recordPath = Join-Path (Join-Path (Join-Path $HomePath ".marginalia") "runtime") ".marginalia\server.pid"
     $recordProcessId = Read-TestServerProcessId $recordPath
     $daemonPresent = (
         ($recordProcessId -gt 0 -and (Test-ProcessAlive $recordProcessId)) -or
@@ -102,7 +101,7 @@ function Stop-TestDaemon([string]$HomePath, [string]$VaultName, [string]$ToolBin
     if (-not $sandboxCli) {
         throw "cleanup found a sandbox daemon but no sandbox marginalia command; retained $HomePath"
     }
-    & $sandboxCli stop --vault $vaultPath --timeout 30 2>$null | Out-Null
+    & $sandboxCli stop --timeout 30 2>$null | Out-Null
 
     for ($i = 0; $i -lt 60; $i++) {
         if ($recordProcessId -le 0) {
@@ -280,9 +279,12 @@ if ($Profile -eq "release-lifecycle") {
     $InstallSha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $remoteInstaller).Hash.ToLowerInvariant()
     $ManifestSha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $remoteManifest).Hash.ToLowerInvariant()
     $manifest = Get-Content -Raw -LiteralPath $remoteManifest | ConvertFrom-Json
-    if ([string]$manifest.version -ne $ExpectedVersion) {
+    if ($ExpectedVersion -and [string]$manifest.version -ne $ExpectedVersion) {
         throw "pinned release manifest version '$($manifest.version)' does not match $ExpectedVersion"
     }
+    $ExpectedVersion = [string]$manifest.version
+} elseif (-not $ExpectedVersion) {
+    throw "MARGINALIA_EXPECTED_VERSION is required by this unbaked tester"
 }
 
 $child = @'
@@ -330,9 +332,14 @@ if ($resolvedHome -ne $resolvedExpected) {
     throw "PowerShell HOME isolation failed: HOME is '$resolvedHome', expected '$resolvedExpected'. Launch the tester from test-install.ps1, not the runner directly."
 }
 
-$env:MARGINALIA_VAULT = $Vault
+if ($Profile -eq "release-lifecycle") {
+    Remove-Item Env:MARGINALIA_VAULT -ErrorAction SilentlyContinue
+} else {
+    $env:MARGINALIA_VAULT = $Vault
+}
 $env:MARGINALIA_EXPECTED_VERSION = $ExpectedVersion
 $env:MARGINALIA_NO_MCP = "1"
+$env:MARGINALIA_NO_OPEN = "1"
 # This tester redirects HOME/USERPROFILE but not the real Windows user-PATH
 # registry - never let a sandbox run persist PATH there via uv tool update-shell.
 $env:MARGINALIA_NO_UPDATE_SHELL = "1"
@@ -365,6 +372,7 @@ foreach ($name in @(
     "MARGINALIA_LLM_MODEL",
     "MARGINALIA_LLM_SKIP_DISCOVERY",
     "MARGINALIA_LLM_ALLOW_REMOTE",
+    "MARGINALIA_ALLOW_REMOTE_LLM",
     "MARGINALIA_PACKS",
     "MARGINALIA_WHEEL",
     "MARGINALIA_SRC",
@@ -397,7 +405,6 @@ if ($Profile -eq "skip") {
 if ($Profile -eq "release-lifecycle") {
     $env:MARGINALIA_MANIFEST = $ManifestUrl
     $env:MARGINALIA_DEFAULT_MANIFEST_URL = $ManifestUrl
-    $env:MARGINALIA_PACKS = "core,research,personal"
     $existingVaultConfig = Join-Path `
         (Join-Path (Join-Path (Join-Path $HOME ".marginalia") "vaults") $Vault) `
         "marginalia.yaml"
@@ -470,7 +477,7 @@ function Invoke-TestMarginalia([string]$Command, [string[]]$Arguments) {
     }
 }
 
-function Get-TestStatus([string]$Command, [string]$VaultPath, [string]$Endpoint = "") {
+function Get-TestStatus([string]$Command, [string]$Endpoint = "") {
     $oldEndpoint = $env:MARGINALIA_ENDPOINT
     try {
         if ($Endpoint) {
@@ -478,9 +485,9 @@ function Get-TestStatus([string]$Command, [string]$VaultPath, [string]$Endpoint 
         } else {
             Remove-Item Env:MARGINALIA_ENDPOINT -ErrorAction SilentlyContinue
         }
-        $raw = (& $Command status --vault $VaultPath --json --timeout 5 2>$null | Out-String)
+        $raw = (& $Command status --json --timeout 5 2>$null | Out-String)
         if ($LASTEXITCODE -ne 0 -or -not $raw.Trim()) {
-            throw "authenticated status failed for $VaultPath"
+            throw "application status failed"
         }
         return ($raw | ConvertFrom-Json)
     } finally {
@@ -488,10 +495,10 @@ function Get-TestStatus([string]$Command, [string]$VaultPath, [string]$Endpoint 
     }
 }
 
-function Confirm-DefaultDaemon([string]$Command, [string]$VaultPath, [string]$Version) {
+function Confirm-DefaultDaemon([string]$Command, [string]$Version) {
     $endpoint = "http://127.0.0.1:7777"
     Wait-TestHealth $endpoint
-    $status = Get-TestStatus $Command $VaultPath
+    $status = Get-TestStatus $Command
     if ([string]$status.marginalia_version -ne $Version) {
         throw "server version '$($status.marginalia_version)' does not match $Version"
     }
@@ -500,30 +507,22 @@ function Confirm-DefaultDaemon([string]$Command, [string]$VaultPath, [string]$Ve
     }
     $processId = [int]$status.pid
     if ($processId -le 0 -or -not (Test-ChildProcessAlive $processId)) {
-        throw "authenticated status did not identify a live daemon process"
+        throw "application status did not identify a live daemon process"
     }
 
-    $tokenFile = Join-Path $VaultPath ".marginalia\daemon.token"
-    if (-not (Test-Path -LiteralPath $tokenFile)) {
-        throw "missing daemon token: $tokenFile"
-    }
-    $token = (Get-Content -Raw -LiteralPath $tokenFile).Trim()
-    if (-not $token) {
-        throw "daemon token is empty: $tokenFile"
-    }
     $response = Invoke-WebRequest -UseBasicParsing -Uri "$endpoint/" `
-        -Headers @{ Authorization = "Bearer $token" } -TimeoutSec 5 -ErrorAction Stop
+        -TimeoutSec 5 -ErrorAction Stop
     if ($response.StatusCode -ne 200 -or $response.Content -notmatch '(?i)<(?:!doctype\s+html|html)') {
-        throw "authenticated UI fetch did not return the Marginalia HTML application"
+        throw "plain UI fetch did not return the Marginalia HTML application"
     }
 
-    $uiOutput = (& $Command ui --no-open --vault $VaultPath 2>$null | Out-String).Trim()
+    $uiOutput = (& $Command ui --no-open 2>$null | Out-String).Trim()
     if ($LASTEXITCODE -ne 0) {
         throw "marginalia ui --no-open failed"
     }
-    $expectedUi = "Authenticated Marginalia UI is ready at $endpoint; browser launch skipped"
+    $expectedUi = "Marginalia UI is ready at $endpoint/; browser launch skipped"
     if ($uiOutput -ne $expectedUi) {
-        throw "unexpected authenticated UI output: $uiOutput"
+        throw "unexpected UI output: $uiOutput"
     }
     Write-Host $uiOutput
     return $status
@@ -562,6 +561,350 @@ function Assert-TokenUnchanged([string]$Path, [string]$Baseline) {
     }
 }
 
+function Assert-CanonicalTestPidRecord(
+    [string]$Python,
+    [string]$HelperPath,
+    [string]$RecordPath,
+    [int]$ExpectedProcessId
+) {
+    $validationOutput = @(
+        & $Python $HelperPath "validate" $RecordPath ([string]$ExpectedProcessId) 2>&1
+    )
+    $validationExitCode = $LASTEXITCODE
+    $validationText = (($validationOutput | ForEach-Object { [string]$_ }) -join "`n").Trim()
+    if ($validationExitCode -ne 0) {
+        throw "canonical application PID record validation failed: $validationText"
+    }
+    if ($validationText -notmatch '^[0-9a-f]{32}$') {
+        throw "canonical application PID record returned an invalid owner identity: $validationText"
+    }
+    return $validationText
+}
+
+function Invoke-PredecessorMigration(
+    [string]$Url,
+    [string]$Version,
+    [string]$SuccessorManifestUrl,
+    [string]$HomePath,
+    [switch]$FailAfterInstallBeforeStatus
+) {
+    $predecessorCommit = "19847892b7e129225011d21d6d1f2ce00f996458"
+    $predecessorInstallUrl = "https://raw.githubusercontent.com/OktoLabsAI/marginalia-dist/$predecessorCommit/install.ps1"
+    $predecessorManifestUrl = "https://raw.githubusercontent.com/OktoLabsAI/marginalia-dist/$predecessorCommit/release-manifest.json"
+    $predecessorInstallSha = "6856a0bac3c424a06ce865e2adff1a28906c8e3cbe7ea9603cddae92b08fa29d"
+    $predecessorManifestSha = "619d45919b506757442b758a4898e865e5600c7da12d8c83677bb3080414c5d8"
+    $migrationHome = Join-Path $HomePath "predecessor-migration"
+    $migrationToolBin = Join-Path $migrationHome ".uv\bin"
+    $legacyVault = Join-Path (Join-Path (Join-Path $migrationHome ".marginalia") "vaults") "legacy-vault"
+    $legacyPidFile = Join-Path $legacyVault ".marginalia\server.pid"
+    $appPidFile = Join-Path (Join-Path (Join-Path $migrationHome ".marginalia") "runtime") ".marginalia\server.pid"
+    $legacyTokenFile = Join-Path $legacyVault ".marginalia\daemon.token"
+    $predecessorInstaller = Join-Path $migrationHome "predecessor-install.ps1"
+    $predecessorManifest = Join-Path $migrationHome "predecessor-manifest.json"
+    $trackedProcessIds = @()
+    $legacyCli = $null
+    $environmentNames = @(
+        "HOME", "USERPROFILE", "APPDATA", "LOCALAPPDATA", "TEMP", "TMP", "PATH",
+        "XDG_DATA_HOME", "XDG_CACHE_HOME", "XDG_CONFIG_HOME", "XDG_BIN_HOME",
+        "UV_TOOL_DIR", "UV_TOOL_BIN_DIR", "UV_INSTALL_DIR", "UV_PYTHON_INSTALL_DIR",
+        "UV_PYTHON_BIN_DIR", "UV_PYTHON_CACHE_DIR", "UV_CACHE_DIR",
+        "UV_NO_MODIFY_PATH", "UV_PYTHON_NO_REGISTRY", "UV_PYTHON_INSTALL_REGISTRY",
+        "MARGINALIA_NO_MCP", "MARGINALIA_NO_OPEN", "MARGINALIA_NO_UPDATE_SHELL",
+        "MARGINALIA_VAULT", "MARGINALIA_ONBOARD_NONINTERACTIVE",
+        "MARGINALIA_LLM_PROVIDER", "MARGINALIA_EXPECTED_VERSION", "MARGINALIA_MANIFEST",
+        "MARGINALIA_DEFAULT_MANIFEST_URL", "MARGINALIA_TEST_FAIL_ACTIVATION",
+        "MARGINALIA_REAL_UV", "MARGINALIA_TEST_INSTALL_URL"
+    )
+    $savedEnvironment = @{}
+    foreach ($name in $environmentNames) {
+        $savedEnvironment[$name] = [Environment]::GetEnvironmentVariable($name, "Process")
+    }
+
+    try {
+        if (Test-Path -LiteralPath $migrationHome) {
+            Remove-Item -LiteralPath $migrationHome -Recurse -Force
+        }
+        New-Item -ItemType Directory -Force -Path `
+            $migrationHome, `
+            (Join-Path $migrationHome "AppData\Roaming"), `
+            (Join-Path $migrationHome "AppData\Local"), `
+            (Join-Path $migrationHome ".cache"), `
+            (Join-Path $migrationHome ".config"), `
+            (Join-Path $migrationHome ".local\share"), `
+            (Join-Path $migrationHome ".uv\tools"), `
+            (Join-Path $migrationHome ".uv\bin"), `
+            (Join-Path $migrationHome ".uv\python"), `
+            (Join-Path $migrationHome ".uv\python-bin"), `
+            (Join-Path $migrationHome ".uv\python-cache"), `
+            (Join-Path $migrationHome ".uv\cache"), `
+            (Join-Path $migrationHome "tmp") | Out-Null
+
+        $env:HOME = $migrationHome
+        $env:USERPROFILE = $migrationHome
+        $env:APPDATA = Join-Path $migrationHome "AppData\Roaming"
+        $env:LOCALAPPDATA = Join-Path $migrationHome "AppData\Local"
+        $env:TEMP = Join-Path $migrationHome "tmp"
+        $env:TMP = Join-Path $migrationHome "tmp"
+        $env:XDG_DATA_HOME = Join-Path $migrationHome ".local\share"
+        $env:XDG_CACHE_HOME = Join-Path $migrationHome ".cache"
+        $env:XDG_CONFIG_HOME = Join-Path $migrationHome ".config"
+        $env:XDG_BIN_HOME = Join-Path $migrationHome ".local\bin"
+        $env:UV_TOOL_DIR = Join-Path $migrationHome ".uv\tools"
+        $env:UV_TOOL_BIN_DIR = $migrationToolBin
+        $env:UV_INSTALL_DIR = $migrationToolBin
+        $env:UV_PYTHON_INSTALL_DIR = Join-Path $migrationHome ".uv\python"
+        $env:UV_PYTHON_BIN_DIR = Join-Path $migrationHome ".uv\python-bin"
+        $env:UV_PYTHON_CACHE_DIR = Join-Path $migrationHome ".uv\python-cache"
+        $env:UV_CACHE_DIR = Join-Path $migrationHome ".uv\cache"
+        $env:UV_NO_MODIFY_PATH = "1"
+        $env:UV_PYTHON_NO_REGISTRY = "1"
+        $env:UV_PYTHON_INSTALL_REGISTRY = "0"
+        $env:Path = "$migrationToolBin;$($savedEnvironment['PATH'])"
+        $env:MARGINALIA_NO_MCP = "1"
+        $env:MARGINALIA_NO_OPEN = "1"
+        $env:MARGINALIA_NO_UPDATE_SHELL = "1"
+        $env:MARGINALIA_VAULT = "legacy-vault"
+        $env:MARGINALIA_ONBOARD_NONINTERACTIVE = "1"
+        $env:MARGINALIA_LLM_PROVIDER = "skip"
+        $env:MARGINALIA_EXPECTED_VERSION = "0.0.40"
+        $env:MARGINALIA_MANIFEST = $predecessorManifestUrl
+        $env:MARGINALIA_DEFAULT_MANIFEST_URL = $predecessorManifestUrl
+        Remove-Item Env:MARGINALIA_TEST_FAIL_ACTIVATION -ErrorAction SilentlyContinue
+        Remove-Item Env:MARGINALIA_REAL_UV -ErrorAction SilentlyContinue
+
+        Invoke-WebRequest -UseBasicParsing -Uri $predecessorInstallUrl -OutFile $predecessorInstaller
+        Invoke-WebRequest -UseBasicParsing -Uri $predecessorManifestUrl -OutFile $predecessorManifest
+        if ((Get-FileHash -Algorithm SHA256 -LiteralPath $predecessorInstaller).Hash.ToLowerInvariant() -ne $predecessorInstallSha) {
+            throw "immutable predecessor installer SHA-256 mismatch"
+        }
+        if ((Get-FileHash -Algorithm SHA256 -LiteralPath $predecessorManifest).Hash.ToLowerInvariant() -ne $predecessorManifestSha) {
+            throw "immutable predecessor manifest SHA-256 mismatch"
+        }
+        Write-Host "PREDECESSOR_COMMIT=$predecessorCommit"
+        Write-Host "PREDECESSOR_INSTALL_URL=$predecessorInstallUrl"
+        Write-Host "PREDECESSOR_INSTALL_SHA256=$predecessorInstallSha"
+        Write-Host "PREDECESSOR_MANIFEST_URL=$predecessorManifestUrl"
+        Write-Host "PREDECESSOR_MANIFEST_SHA256=$predecessorManifestSha"
+
+        $predecessorOutput = Join-Path $migrationHome "predecessor-install.out"
+        if ((Invoke-RawInstallerProcess $predecessorInstallUrl $predecessorOutput) -ne 0) {
+            throw "immutable predecessor installation failed"
+        }
+        if ($FailAfterInstallBeforeStatus) {
+            throw "forced predecessor failure before status"
+        }
+        foreach ($name in @("marginalia.exe", "marginalia.cmd", "marginalia")) {
+            $candidate = Join-Path $migrationToolBin $name
+            if (Test-Path -LiteralPath $candidate) { $legacyCli = $candidate; break }
+        }
+        if (-not $legacyCli) { throw "immutable predecessor CLI was not installed" }
+        $legacyStatus = $null
+        for ($i = 0; $i -lt 90; $i++) {
+            try {
+                $rawStatus = (& $legacyCli status --vault $legacyVault --json --timeout 5 2>$null | Out-String)
+                if ($LASTEXITCODE -eq 0 -and $rawStatus) {
+                    $candidateStatus = ConvertFrom-Json $rawStatus
+                    if ([string]$candidateStatus.marginalia_version -eq "0.0.40") {
+                        $legacyStatus = $candidateStatus
+                        break
+                    }
+                }
+            } catch {}
+            Start-Sleep -Seconds 1
+        }
+        if ($null -eq $legacyStatus) { throw "immutable predecessor daemon did not become ready" }
+        $oldProcessId = [int]$legacyStatus.pid
+        $trackedProcessIds += $oldProcessId
+        if ($oldProcessId -le 0 -or -not (Test-ChildProcessAlive $oldProcessId)) {
+            throw "immutable predecessor status did not identify a live process"
+        }
+        if (-not (Test-Path -LiteralPath $legacyPidFile -PathType Leaf)) {
+            throw "immutable predecessor did not create its vault-scoped PID file"
+        }
+        if (-not (Test-Path -LiteralPath $legacyTokenFile -PathType Leaf)) {
+            throw "immutable predecessor did not create its vault-scoped token"
+        }
+        $legacyTokenHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $legacyTokenFile).Hash.ToLowerInvariant()
+        $realUv = (Get-Command uv -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
+        $toolRoot = ([string](& $realUv tool dir | Select-Object -First 1)).Trim()
+        $sentinel = Join-Path (Join-Path $toolRoot "marginalia") ".predecessor-v0040-sentinel"
+        Set-Content -LiteralPath $sentinel -Value "immutable-predecessor:0.0.40" -Encoding ASCII
+        $sentinelHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $sentinel).Hash.ToLowerInvariant()
+        Write-Host "RELEASE_LIFECYCLE_PREDECESSOR_RUNNING_OK"
+
+        $env:MARGINALIA_EXPECTED_VERSION = $Version
+        $env:MARGINALIA_MANIFEST = $SuccessorManifestUrl
+        $env:MARGINALIA_DEFAULT_MANIFEST_URL = $SuccessorManifestUrl
+        $shimRoot = Join-Path $migrationHome "activation-failure-shim"
+        New-Item -ItemType Directory -Force -Path $shimRoot | Out-Null
+        @(
+            '@echo off',
+            'if "%MARGINALIA_TEST_FAIL_ACTIVATION%"=="1" if /I "%~1"=="tool" if /I "%~2"=="install" exit /b 77',
+            '"%MARGINALIA_REAL_UV%" %*',
+            'exit /b %ERRORLEVEL%'
+        ) | Set-Content -LiteralPath (Join-Path $shimRoot "uv.cmd") -Encoding ASCII
+        $env:MARGINALIA_REAL_UV = $realUv
+        $env:MARGINALIA_TEST_FAIL_ACTIVATION = "1"
+        $env:Path = "$shimRoot;$migrationToolBin;$($savedEnvironment['PATH'])"
+        $rollbackOutput = Join-Path $migrationHome "predecessor-rollback.out"
+        if ((Invoke-RawInstallerProcess $Url $rollbackOutput) -eq 0) {
+            throw "forced successor activation failure unexpectedly succeeded"
+        }
+        Remove-Item Env:MARGINALIA_TEST_FAIL_ACTIVATION -ErrorAction SilentlyContinue
+        Remove-Item Env:MARGINALIA_REAL_UV -ErrorAction SilentlyContinue
+        $env:Path = "$migrationToolBin;$($savedEnvironment['PATH'])"
+        Assert-OutputContains $rollbackOutput "candidate activation failed"
+        Assert-OutputContains $rollbackOutput "restored and restarted Marginalia 0.0.40"
+        if (([string](& $legacyCli --version | Select-Object -First 1)).Trim() -ne "marginalia 0.0.40") {
+            throw "rollback did not restore the immutable predecessor CLI"
+        }
+        if (-not (Test-Path -LiteralPath $sentinel -PathType Leaf) -or
+            (Get-FileHash -Algorithm SHA256 -LiteralPath $sentinel).Hash.ToLowerInvariant() -ne $sentinelHash) {
+            throw "rollback did not restore the immutable predecessor tool sentinel"
+        }
+        if ((Get-FileHash -Algorithm SHA256 -LiteralPath $legacyTokenFile).Hash.ToLowerInvariant() -ne $legacyTokenHash) {
+            throw "rollback changed the immutable predecessor token"
+        }
+        $rollbackStatus = (& $legacyCli status --vault $legacyVault --json --timeout 5 2>$null | Out-String) | ConvertFrom-Json
+        $rollbackProcessId = [int]$rollbackStatus.pid
+        $trackedProcessIds += $rollbackProcessId
+        if ([string]$rollbackStatus.marginalia_version -ne "0.0.40" -or
+            $rollbackProcessId -le 0 -or $rollbackProcessId -eq $oldProcessId -or
+            -not (Test-ChildProcessAlive $rollbackProcessId)) {
+            throw "rollback did not restart the immutable predecessor daemon"
+        }
+        Write-Host "RELEASE_LIFECYCLE_PREDECESSOR_ROLLBACK_OK"
+
+        $migrationOutput = Join-Path $migrationHome "predecessor-migration.out"
+        if ((Invoke-RawInstallerProcess $Url $migrationOutput) -ne 0) {
+            throw "successor migration from immutable predecessor failed"
+        }
+        $status = Confirm-DefaultDaemon $legacyCli $Version
+        $migratedProcessId = [int]$status.pid
+        $trackedProcessIds += $migratedProcessId
+        if ($migratedProcessId -le 0 -or $migratedProcessId -eq $rollbackProcessId) {
+            throw "successor migration did not replace the predecessor daemon"
+        }
+        $appTokenFile = Join-Path (Join-Path $migrationHome ".marginalia") "daemon-7777.token"
+        if (-not (Test-Path -LiteralPath $appPidFile -PathType Leaf) -or
+            (Test-Path -LiteralPath $legacyPidFile)) {
+            throw "successor migration did not move lifecycle ownership to application scope"
+        }
+        if (-not (Test-Path -LiteralPath $appTokenFile -PathType Leaf) -or
+            (Get-Item -LiteralPath $appTokenFile).Length -le 0 -or
+            (Get-FileHash -Algorithm SHA256 -LiteralPath $appTokenFile).Hash.ToLowerInvariant() -ne $legacyTokenHash -or
+            (Get-FileHash -Algorithm SHA256 -LiteralPath $legacyTokenFile).Hash.ToLowerInvariant() -ne $legacyTokenHash) {
+            throw "successor migration did not preserve the capability token across application scope migration"
+        }
+        if (Test-Path -LiteralPath $sentinel) {
+            throw "successful successor migration retained the predecessor-only tool sentinel"
+        }
+        Invoke-TestMarginalia $legacyCli @("stop", "--timeout", "30")
+        Wait-TestDaemonStopped $migratedProcessId @(7777, 8201)
+        Write-Host "RELEASE_LIFECYCLE_PREDECESSOR_MIGRATION_OK"
+    } finally {
+        $ownedProcesses = @()
+        $ownedProcessIds = @{}
+        $cleanupFailure = ""
+        try {
+            Remove-Item Env:MARGINALIA_TEST_FAIL_ACTIVATION -ErrorAction SilentlyContinue
+            Remove-Item Env:MARGINALIA_REAL_UV -ErrorAction SilentlyContinue
+
+            $legacyRecordProcessId = Read-TestServerProcessId $legacyPidFile
+            $appRecordProcessId = Read-TestServerProcessId $appPidFile
+            $cleanupProcessIds = @(
+                @($trackedProcessIds)
+                $legacyRecordProcessId
+                $appRecordProcessId
+            ) | Where-Object { [int]$_ -gt 0 } | Sort-Object -Unique
+            $migrationRootPrefix = [IO.Path]::GetFullPath($migrationHome).TrimEnd('\', '/') + `
+                [IO.Path]::DirectorySeparatorChar
+            foreach ($processId in $cleanupProcessIds) {
+                $candidateProcess = $null
+                try {
+                    $candidateProcess = Get-Process -Id ([int]$processId) -ErrorAction Stop
+                    $candidateExecutable = [IO.Path]::GetFullPath(
+                        $candidateProcess.MainModule.FileName
+                    )
+                    if (-not $candidateExecutable.StartsWith(
+                        $migrationRootPrefix,
+                        [StringComparison]::OrdinalIgnoreCase
+                    )) {
+                        $candidateProcess.Dispose()
+                        continue
+                    }
+                    $null = $candidateProcess.Handle
+                    $ownedProcesses += $candidateProcess
+                    $ownedProcessIds[[string]$processId] = $true
+                } catch {
+                    if ($null -ne $candidateProcess) {
+                        $candidateProcess.Dispose()
+                    }
+                    if ((Test-ChildProcessAlive ([int]$processId)) -and -not $cleanupFailure) {
+                        $cleanupFailure = "cleanup could not verify migration process $processId ownership"
+                    }
+                }
+            }
+
+            $cleanupCli = $legacyCli
+            if (-not $cleanupCli) {
+                foreach ($name in @("marginalia.exe", "marginalia.cmd", "marginalia")) {
+                    $candidate = Join-Path $migrationToolBin $name
+                    if (Test-Path -LiteralPath $candidate) {
+                        $cleanupCli = $candidate
+                        break
+                    }
+                }
+            }
+            if ($cleanupCli -and $appRecordProcessId -gt 0 -and
+                $ownedProcessIds.ContainsKey([string]$appRecordProcessId)) {
+                try { & $cleanupCli stop --timeout 30 2>$null | Out-Null } catch {}
+            }
+            if ($cleanupCli -and $legacyRecordProcessId -gt 0 -and
+                $ownedProcessIds.ContainsKey([string]$legacyRecordProcessId)) {
+                try { & $cleanupCli stop --vault $legacyVault --timeout 30 2>$null | Out-Null } catch {}
+            }
+
+            foreach ($ownedProcess in $ownedProcesses) {
+                try {
+                    if (-not $ownedProcess.HasExited -and -not $ownedProcess.WaitForExit(5000)) {
+                        Stop-Process -InputObject $ownedProcess -Force -ErrorAction SilentlyContinue
+                        if (-not $ownedProcess.WaitForExit(5000) -and -not $cleanupFailure) {
+                            $cleanupFailure = "owned migration process $($ownedProcess.Id) remained live"
+                        }
+                    }
+                } catch {
+                    if (-not $cleanupFailure) {
+                        $cleanupFailure = "cleanup could not stop migration process $($ownedProcess.Id): $($_.Exception.Message)"
+                    }
+                }
+            }
+
+            $portsClosed = $false
+            for ($i = 0; $i -lt 60; $i++) {
+                if (-not (Test-ChildTcpPort 7777) -and -not (Test-ChildTcpPort 8201)) {
+                    $portsClosed = $true
+                    break
+                }
+                Start-Sleep -Milliseconds 500
+            }
+            if (-not $portsClosed -and -not $cleanupFailure) {
+                $cleanupFailure = "migration daemon ports remained live after cleanup"
+            }
+        } finally {
+            foreach ($ownedProcess in $ownedProcesses) {
+                try { $ownedProcess.Dispose() } catch {}
+            }
+            foreach ($name in $environmentNames) {
+                [Environment]::SetEnvironmentVariable($name, $savedEnvironment[$name], "Process")
+            }
+        }
+        if ($cleanupFailure) {
+            throw $cleanupFailure
+        }
+    }
+}
+
 function Invoke-ReleaseLifecycle(
     [string]$Command,
     [string]$VaultPath,
@@ -569,18 +912,26 @@ function Invoke-ReleaseLifecycle(
     [string]$Url,
     [string]$HomePath
 ) {
-    Write-Host "WINDOWS_RELEASE_LIFECYCLE_INTERACTIVE_ONBOARDING_OK"
-    $status = Confirm-DefaultDaemon $Command $VaultPath $Version
+    $status = Confirm-DefaultDaemon $Command $Version
+    if ([int]$status.vault_count -ne 0 -or (Test-Path -LiteralPath $VaultPath)) {
+        throw "default installer did not start as an application-first, no-vault daemon"
+    }
+    Write-Host "WINDOWS_RELEASE_LIFECYCLE_APP_FIRST_OK"
+    Invoke-TestMarginalia $Command @("vault", "create", (Split-Path -Leaf $VaultPath), "--use")
+    $status = Confirm-DefaultDaemon $Command $Version
+    if ([int]$status.vault_count -ne 1) {
+        throw "created vault was not discovered by the application daemon"
+    }
     Write-Host "RELEASE_LIFECYCLE_FRESH_INSTALL_OK"
     Write-Host "RELEASE_LIFECYCLE_STATUS_UI_OK"
 
     $yaml = Join-Path $VaultPath "marginalia.yaml"
     $configHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $yaml).Hash.ToLowerInvariant()
-    $tokenPath = Join-Path $VaultPath ".marginalia\daemon.token"
+    $tokenPath = Join-Path (Join-Path $HomePath ".marginalia") "daemon-7777.token"
     $initialToken = [Convert]::ToBase64String([IO.File]::ReadAllBytes($tokenPath))
 
     $stoppedProcessId = [int]$status.pid
-    Invoke-TestMarginalia $Command @("stop", "--vault", $VaultPath, "--timeout", "30")
+    Invoke-TestMarginalia $Command @("stop", "--timeout", "30")
     Wait-TestDaemonStopped $stoppedProcessId @(7777, 8201)
     $stoppedOutput = Join-Path $HomePath "stopped-update.out"
     $stoppedExitCode = Invoke-RawInstallerProcess $Url $stoppedOutput
@@ -597,15 +948,15 @@ function Invoke-ReleaseLifecycle(
     Assert-TokenUnchanged $tokenPath $initialToken
     Write-Host "RELEASE_LIFECYCLE_STOPPED_UPDATE_OK"
 
-    Invoke-TestMarginalia $Command @("serve", "--daemon", "--vault", $VaultPath)
-    $status = Confirm-DefaultDaemon $Command $VaultPath $Version
+    Invoke-TestMarginalia $Command @("serve", "--daemon", "--no-open")
+    $status = Confirm-DefaultDaemon $Command $Version
     $runningBefore = [int]$status.pid
     $runningOutput = Join-Path $HomePath "running-update.out"
     $runningExitCode = Invoke-RawInstallerProcess $Url $runningOutput
     if ($runningExitCode -ne 0) {
         throw "running update failed with exit code $runningExitCode"
     }
-    $status = Confirm-DefaultDaemon $Command $VaultPath $Version
+    $status = Confirm-DefaultDaemon $Command $Version
     $runningAfter = [int]$status.pid
     if ($runningBefore -eq $runningAfter) {
         throw "running update did not replace the daemon process"
@@ -630,14 +981,14 @@ function Invoke-ReleaseLifecycle(
         -LiteralPath $rollbackSentinel).Hash.ToLowerInvariant()
     Write-Host "RELEASE_LIFECYCLE_RUNNING_UPDATE_OK"
 
-    Invoke-TestMarginalia $Command @("stop", "--vault", $VaultPath, "--timeout", "30")
+    Invoke-TestMarginalia $Command @("stop", "--timeout", "30")
     Wait-TestDaemonStopped $runningAfter @(7777, 8201)
     Invoke-TestMarginalia $Command @(
-        "serve", "--daemon", "--vault", $VaultPath, "--port", "7788", "--mcp-port", "8202"
+        "serve", "--daemon", "--no-open", "--port", "7788", "--mcp-port", "8202"
     )
     $customEndpoint = "http://127.0.0.1:7788"
     Wait-TestHealth $customEndpoint
-    $customStatus = Get-TestStatus $Command $VaultPath $customEndpoint
+    $customStatus = Get-TestStatus $Command $customEndpoint
     $customProcessId = [int]$customStatus.pid
     if ($customProcessId -le 0 -or -not (Test-ChildProcessAlive $customProcessId)) {
         throw "custom-port status did not identify a live daemon process"
@@ -678,32 +1029,158 @@ function Invoke-ReleaseLifecycle(
     }
     try {
         $env:MARGINALIA_ENDPOINT = $customEndpoint
-        Invoke-TestMarginalia $Command @("stop", "--vault", $VaultPath, "--timeout", "30")
+        Invoke-TestMarginalia $Command @("stop", "--timeout", "30")
     } finally {
         $env:MARGINALIA_ENDPOINT = $oldEndpoint
     }
     Wait-TestDaemonStopped $customProcessId @(7788, 8202)
     Write-Host "RELEASE_LIFECYCLE_CUSTOM_PORT_REFUSAL_OK"
 
-    $guardVault = Join-Path (Join-Path (Join-Path $HomePath ".marginalia") "vaults") "release-pid-guard"
-    $guardRecordRoot = Join-Path $guardVault ".marginalia"
+    $guardRuntimeRoot = Join-Path (Join-Path $HomePath ".marginalia") "runtime"
+    $guardRecordRoot = Join-Path $guardRuntimeRoot ".marginalia"
+    $guardRecordPath = Join-Path $guardRecordRoot "server.pid"
+    $guardHelperName = "marginalia-pid-owner.py"
+    $guardHelperPath = Join-Path $HomePath $guardHelperName
+    $guardReadyPath = Join-Path $HomePath "marginalia-pid-owner.ready"
+    $guardStopPath = Join-Path $HomePath "marginalia-pid-owner.stop"
+    $guardPython = Join-Path (Join-Path $toolRoot "marginalia") "Scripts\python.exe"
+    if (-not (Test-Path -LiteralPath $guardPython -PathType Leaf)) {
+        throw "installed successor Python was not found: $guardPython"
+    }
     New-Item -ItemType Directory -Force -Path $guardRecordRoot | Out-Null
-    $nestedPowerShell = Join-Path $PSHOME "powershell.exe"
-    $guardProcess = Start-Process -FilePath $nestedPowerShell `
-        -ArgumentList @("-NoProfile", "-Command", "Start-Sleep -Seconds 1800") `
-        -WindowStyle Hidden -PassThru
+    if (Test-Path -LiteralPath $guardRecordPath) {
+        throw "custom-port daemon left an application PID record: $guardRecordPath"
+    }
+    Remove-Item -LiteralPath $guardHelperPath, $guardReadyPath, $guardStopPath `
+        -Force -ErrorAction SilentlyContinue
+
+    $guardHelperSource = @"
+import json
+import os
+import signal
+import string
+import sys
+import threading
+from pathlib import Path
+
+from marginalia.server import lifecycle
+
+
+def hold() -> None:
+    root = Path(os.environ["MARGINALIA_TEST_PID_ROOT"])
+    ready_path = Path(os.environ["MARGINALIA_TEST_PID_READY"])
+    stop_path = Path(os.environ["MARGINALIA_TEST_PID_STOP"])
+    stopping = threading.Event()
+
+    def request_stop(_signum: int, _frame: object) -> None:
+        stopping.set()
+
+    signal.signal(signal.SIGTERM, request_stop)
+    signal.signal(signal.SIGINT, request_stop)
+    with lifecycle.PidFile(root):
+        temporary = ready_path.with_name(f".{ready_path.name}.{os.getpid()}.tmp")
+        try:
+            temporary.write_text(f"{os.getpid()}\n", encoding="ascii")
+            os.replace(temporary, ready_path)
+        finally:
+            temporary.unlink(missing_ok=True)
+        while not stopping.wait(0.1):
+            if stop_path.exists():
+                break
+
+
+def validate(record_path: Path, expected_pid: int) -> None:
+    payload = json.loads(record_path.read_text(encoding="utf-8"))
+    if set(payload) != {"version", "pid", "start_token", "owner_id"}:
+        raise SystemExit("PID record fields are not canonical")
+    if payload["version"] != lifecycle.PID_RECORD_VERSION:
+        raise SystemExit("PID record version is not canonical")
+    if payload["pid"] != expected_pid:
+        raise SystemExit("PID record does not identify the helper process")
+    current_token = lifecycle._process_start_token(expected_pid)
+    if current_token is None or payload["start_token"] != current_token:
+        raise SystemExit("PID record birth token does not identify the helper process")
+    owner_id = payload["owner_id"]
+    if not isinstance(owner_id, str) or len(owner_id) != 32:
+        raise SystemExit("PID record owner identity is not canonical")
+    if any(character not in string.hexdigits for character in owner_id):
+        raise SystemExit("PID record owner identity is not hexadecimal")
+    print(owner_id, flush=True)
+
+
+if __name__ == "__main__":
+    if len(sys.argv) == 2 and sys.argv[1] == "hold":
+        hold()
+    elif len(sys.argv) == 4 and sys.argv[1] == "validate":
+        validate(Path(sys.argv[2]), int(sys.argv[3]))
+    else:
+        raise SystemExit("usage: marginalia-pid-owner.py hold | validate RECORD PID")
+"@
+    [IO.File]::WriteAllText($guardHelperPath, $guardHelperSource, [Text.Encoding]::ASCII)
+
+    $guardStartInfo = New-Object System.Diagnostics.ProcessStartInfo
+    $guardStartInfo.FileName = $guardPython
+    $guardStartInfo.WorkingDirectory = $HomePath
+    # Windows PowerShell 5.1 has no ProcessStartInfo.ArgumentList. Both command-line
+    # tokens are fixed ASCII; every variable path travels through a property or a
+    # child-only environment variable, avoiding command-line quoting ambiguity.
+    $guardStartInfo.Arguments = "$guardHelperName hold"
+    $guardStartInfo.UseShellExecute = $false
+    $guardStartInfo.CreateNoWindow = $true
+    $guardStartInfo.RedirectStandardOutput = $true
+    $guardStartInfo.RedirectStandardError = $true
+    $guardStartInfo.EnvironmentVariables["MARGINALIA_TEST_PID_ROOT"] = $guardRuntimeRoot
+    $guardStartInfo.EnvironmentVariables["MARGINALIA_TEST_PID_READY"] = $guardReadyPath
+    $guardStartInfo.EnvironmentVariables["MARGINALIA_TEST_PID_STOP"] = $guardStopPath
+
+    $guardProcess = New-Object System.Diagnostics.Process
+    $guardProcess.StartInfo = $guardStartInfo
+    $guardStarted = $false
+    $guardCleanupFailure = ""
+    $guardForced = $false
     try {
-        Set-Content -LiteralPath (Join-Path $guardRecordRoot "server.pid") `
-            -Value ([string]$guardProcess.Id) -Encoding ASCII
+        if (-not $guardProcess.Start()) {
+            throw "installed successor PID owner process did not start"
+        }
+        $guardStarted = $true
+        $guardReady = $false
+        for ($i = 0; $i -lt 100; $i++) {
+            if ((Test-Path -LiteralPath $guardReadyPath -PathType Leaf) -and
+                (Test-Path -LiteralPath $guardRecordPath -PathType Leaf)) {
+                $guardReady = $true
+                break
+            }
+            if ($guardProcess.HasExited) {
+                $guardError = $guardProcess.StandardError.ReadToEnd().Trim()
+                throw "installed successor PID owner exited before readiness: $guardError"
+            }
+            Start-Sleep -Milliseconds 100
+        }
+        if (-not $guardReady) {
+            throw "installed successor PID owner did not become ready"
+        }
+        $guardReadyProcessId = 0
+        $guardReadyText = (Get-Content -Raw -LiteralPath $guardReadyPath).Trim()
+        if (-not ([int]::TryParse($guardReadyText, [ref]$guardReadyProcessId)) -or
+            $guardReadyProcessId -ne $guardProcess.Id) {
+            throw "installed successor PID owner readiness did not match process $($guardProcess.Id)"
+        }
+        $guardOwnerId = Assert-CanonicalTestPidRecord `
+            $guardPython $guardHelperPath $guardRecordPath $guardProcess.Id
         $guardOutput = Join-Path $HomePath "live-pid-refusal.out"
         $guardExitCode = Invoke-RawInstallerProcess $Url $guardOutput
         if ($guardExitCode -eq 0) {
-            throw "installer accepted an unverified live PID record"
+            throw "installer replaced the tool despite a verified application PID owner"
         }
         Assert-OutputContains $guardOutput "live Marginalia process (pid $($guardProcess.Id))"
-        Assert-OutputContains $guardOutput "marginalia stop --vault"
+        Assert-OutputContains $guardOutput "marginalia stop"
         if (-not (Test-ChildProcessAlive $guardProcess.Id)) {
-            throw "live-PID refusal stopped the unrelated guard process"
+            throw "live-PID refusal stopped the lifecycle owner process"
+        }
+        $guardOwnerIdAfter = Assert-CanonicalTestPidRecord `
+            $guardPython $guardHelperPath $guardRecordPath $guardProcess.Id
+        if ($guardOwnerIdAfter -cne $guardOwnerId) {
+            throw "live-PID refusal changed the lifecycle owner identity"
         }
         if (([string](& $Command --version | Select-Object -First 1)).Trim() -ne "marginalia $Version") {
             throw "live-PID refusal changed the installed CLI version"
@@ -712,11 +1189,43 @@ function Invoke-ReleaseLifecycle(
             throw "live-PID refusal changed marginalia.yaml"
         }
     } finally {
-        if (Test-ChildProcessAlive $guardProcess.Id) {
-            Stop-Process -Id $guardProcess.Id -Force -ErrorAction SilentlyContinue
-            $guardProcess.WaitForExit()
+        if ($guardStarted) {
+            if ($guardProcess.HasExited) {
+                $guardCleanupFailure = "lifecycle owner exited before the cleanup request"
+            } else {
+                try {
+                    [IO.File]::WriteAllText($guardStopPath, "stop`n", [Text.Encoding]::ASCII)
+                } catch {
+                    $guardCleanupFailure = "could not request graceful lifecycle-owner cleanup: $($_.Exception.Message)"
+                }
+                if (-not $guardProcess.WaitForExit(5000)) {
+                    $guardForced = $true
+                    Stop-Process -Id $guardProcess.Id -Force -ErrorAction SilentlyContinue
+                    if (-not $guardProcess.WaitForExit(5000)) {
+                        $guardCleanupFailure = "lifecycle owner remained live after force fallback"
+                    } elseif (-not $guardCleanupFailure) {
+                        $guardCleanupFailure = "lifecycle owner required force fallback"
+                    }
+                }
+            }
         }
-        Remove-Item -LiteralPath $guardVault -Recurse -Force -ErrorAction SilentlyContinue
+        if (-not $guardStarted -or $guardProcess.HasExited) {
+            if (Test-Path -LiteralPath $guardRecordPath) {
+                if (-not $guardForced -and -not $guardCleanupFailure) {
+                    $guardCleanupFailure = "graceful lifecycle-owner cleanup left its PID record"
+                }
+                Remove-Item -LiteralPath $guardRecordPath -Force -ErrorAction SilentlyContinue
+            }
+            Remove-Item -LiteralPath $guardHelperPath, $guardReadyPath, $guardStopPath `
+                -Force -ErrorAction SilentlyContinue
+            $guardProcess.Dispose()
+        }
+    }
+    if ($guardCleanupFailure) {
+        throw $guardCleanupFailure
+    }
+    if (Test-Path -LiteralPath $guardRecordPath) {
+        throw "lifecycle owner PID record remained after cleanup: $guardRecordPath"
     }
     Assert-TokenUnchanged $tokenPath $initialToken
     if (-not (Test-Path -LiteralPath $rollbackSentinel -PathType Leaf)) {
@@ -728,8 +1237,8 @@ function Invoke-ReleaseLifecycle(
     }
     Write-Host "RELEASE_LIFECYCLE_LIVE_PID_REFUSAL_OK"
 
-    Invoke-TestMarginalia $Command @("serve", "--daemon", "--vault", $VaultPath)
-    $status = Confirm-DefaultDaemon $Command $VaultPath $Version
+    Invoke-TestMarginalia $Command @("serve", "--daemon", "--no-open")
+    $status = Confirm-DefaultDaemon $Command $Version
     $rollbackBefore = [int]$status.pid
     $rollbackOutput = Join-Path $HomePath "activation-rollback.out"
     $shimRoot = Join-Path $HomePath "activation-failure-shim"
@@ -759,7 +1268,7 @@ function Invoke-ReleaseLifecycle(
     }
     Assert-OutputContains $rollbackOutput "candidate activation failed"
     Assert-OutputContains $rollbackOutput "restored and restarted Marginalia $Version"
-    $status = Confirm-DefaultDaemon $Command $VaultPath $Version
+    $status = Confirm-DefaultDaemon $Command $Version
     $rollbackAfter = [int]$status.pid
     if ($rollbackBefore -eq $rollbackAfter) {
         throw "activation rollback did not restart the previous daemon"
@@ -786,7 +1295,7 @@ function Invoke-ReleaseLifecycle(
     Write-Host "RELEASE_LIFECYCLE_PREVIOUS_TOOL_SENTINEL_OK"
     Write-Host "RELEASE_LIFECYCLE_ACTIVATION_ROLLBACK_OK"
 
-    Invoke-TestMarginalia $Command @("stop", "--vault", $VaultPath, "--timeout", "30")
+    Invoke-TestMarginalia $Command @("stop", "--timeout", "30")
     Wait-TestDaemonStopped $rollbackAfter @(7777, 8201)
     Assert-TokenUnchanged $tokenPath $initialToken
     Write-Host "RELEASE_LIFECYCLE_FINAL_STOP_OK"
@@ -812,6 +1321,9 @@ try {
         throw "$Profile profile requires a real Windows PowerShell terminal; redirected input is only valid for -Profile skip or -Profile custom smoke tests"
     }
 
+    if ($Profile -eq "release-lifecycle") {
+        Invoke-PredecessorMigration $InstallUrl $ExpectedVersion $ManifestUrl $TestHome
+    }
     Invoke-RestMethod -UseBasicParsing $InstallUrl | Invoke-Expression
 
     $toolBin = (& uv tool dir --bin 2>$null | Select-Object -First 1)
@@ -828,14 +1340,16 @@ try {
     if ($cliVersion.Trim() -ne "marginalia $ExpectedVersion") {
         throw "CLI version '$($cliVersion.Trim())' does not match $ExpectedVersion"
     }
-    $currentVault = (& $sandboxCli vault current 2>$null | Out-String).Trim()
-    if ($LASTEXITCODE -ne 0 -or -not $currentVault) {
-        throw "marginalia vault current failed after fresh installation"
+    if ($Profile -ne "release-lifecycle") {
+        $currentVault = (& $sandboxCli vault current 2>$null | Out-String).Trim()
+        if ($LASTEXITCODE -ne 0 -or -not $currentVault) {
+            throw "marginalia vault current failed after fresh installation"
+        }
+        if ([IO.Path]::GetFullPath($currentVault) -ne [IO.Path]::GetFullPath($vaultPath)) {
+            throw "current vault '$currentVault' does not match sandbox vault '$vaultPath'"
+        }
+        Write-Host $currentVault
     }
-    if ([IO.Path]::GetFullPath($currentVault) -ne [IO.Path]::GetFullPath($vaultPath)) {
-        throw "current vault '$currentVault' does not match sandbox vault '$vaultPath'"
-    }
-    Write-Host $currentVault
     if (-not $NoServe) {
         $health = Invoke-RestMethod -Uri "http://127.0.0.1:7777/health" -TimeoutSec 5
         Write-Host "TEST_HEALTH_OK=$($health.status)"
@@ -846,13 +1360,19 @@ try {
         Write-Host "TEST_VERSION_OK=$ExpectedVersion"
     }
     $yaml = Join-Path $vaultPath "marginalia.yaml"
-    if (-not (Test-Path $yaml)) {
-        throw "missing vault config: $yaml"
+    if ($Profile -eq "release-lifecycle") {
+        if (Test-Path -LiteralPath $yaml) {
+            throw "default app-first install unexpectedly created a vault"
+        }
+    } else {
+        if (-not (Test-Path $yaml)) {
+            throw "missing vault config: $yaml"
+        }
+        Write-Host "TEST_YAML=$yaml"
     }
-    Write-Host "TEST_YAML=$yaml"
-    if ($Profile -in @("skip", "release-lifecycle") -and
+    if ($Profile -eq "skip" -and
         (Select-String -Path $yaml -Pattern "^\s*llm:" -Quiet)) {
-        throw "$Profile profile wrote an explicit llm block"
+        throw "skip profile wrote an explicit llm block"
     }
     if ($Profile -eq "custom") {
         if (-not (Select-String -Path $yaml -Pattern "^\s*provider:\s*openai\s*$" -Quiet)) {
@@ -915,6 +1435,7 @@ $envNames = @(
     "XDG_CONFIG_HOME",
     "XDG_BIN_HOME",
     "MARGINALIA_NO_MCP",
+    "MARGINALIA_NO_OPEN",
     "MARGINALIA_VAULT",
     "MARGINALIA_EXPECTED_VERSION",
     "MARGINALIA_NO_SERVE",
@@ -956,7 +1477,12 @@ try {
     [Environment]::SetEnvironmentVariable("XDG_CONFIG_HOME", (Join-Path $TestHome ".config"), "Process")
     [Environment]::SetEnvironmentVariable("XDG_BIN_HOME", (Join-Path $TestHome ".local\bin"), "Process")
     [Environment]::SetEnvironmentVariable("MARGINALIA_NO_MCP", "1", "Process")
-    [Environment]::SetEnvironmentVariable("MARGINALIA_VAULT", $Vault, "Process")
+    [Environment]::SetEnvironmentVariable("MARGINALIA_NO_OPEN", "1", "Process")
+    if ($Profile -eq "release-lifecycle") {
+        [Environment]::SetEnvironmentVariable("MARGINALIA_VAULT", $null, "Process")
+    } else {
+        [Environment]::SetEnvironmentVariable("MARGINALIA_VAULT", $Vault, "Process")
+    }
     [Environment]::SetEnvironmentVariable("MARGINALIA_EXPECTED_VERSION", $ExpectedVersion, "Process")
     foreach ($name in $isolatedMarginaliaNames) {
         [Environment]::SetEnvironmentVariable($name, $null, "Process")
@@ -964,7 +1490,6 @@ try {
     if ($Profile -eq "release-lifecycle") {
         [Environment]::SetEnvironmentVariable("MARGINALIA_MANIFEST", $ManifestUrl, "Process")
         [Environment]::SetEnvironmentVariable("MARGINALIA_DEFAULT_MANIFEST_URL", $ManifestUrl, "Process")
-        [Environment]::SetEnvironmentVariable("MARGINALIA_PACKS", "core,research,personal", "Process")
     }
     if ($NoServe) {
         [Environment]::SetEnvironmentVariable("MARGINALIA_NO_SERVE", "1", "Process")
