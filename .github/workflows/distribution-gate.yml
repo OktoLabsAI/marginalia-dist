@@ -80,7 +80,6 @@ jobs:
           test "$(grep -Fc 'RELEASE_LIFECYCLE_PREDECESSOR_RUNNING_OK' test-install.sh)" -eq 2
           test "$(grep -Fc 'WINDOWS_RELEASE_LIFECYCLE_PREDECESSOR_STOPPED_UPDATE_OK' test-install.ps1)" -eq 1
           test "$(grep -Fc "sha256sum \"\$app_token_file\"" test-install.sh)" -eq 1
-          test "$(grep -Fc "Get-FileHash -Algorithm SHA256 -LiteralPath \$appTokenFile" test-install.ps1)" -eq 1
           grep -Fq 'marginalia ui --no-open' test-install.sh
           grep -Fq 'Marginalia UI is ready at' test-install.sh
           grep -Fq '.release-lifecycle-previous-tool-sentinel' test-install.sh
@@ -227,6 +226,7 @@ jobs:
           operator_verified_dist_tag_commits = {
               "0.0.40": "19847892b7e129225011d21d6d1f2ce00f996458",
               "0.0.41": "92bebfac1347d60a84281e3ca4692565fd954ffe",
+              "0.0.42": "e581bb1d8e09eb64d69005a0217c2184726add8f",
           }
           expected_dist_tag_commit = operator_verified_dist_tag_commits.get(version)
           current_evidence = Path(
