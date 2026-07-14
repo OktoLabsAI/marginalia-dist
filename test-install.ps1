@@ -556,13 +556,13 @@ function Confirm-DefaultDaemon([string]$Command, [string]$Version) {
     return $status
 }
 
-function Invoke-RawInstallerProcess([string]$Url, [string]$OutputPath) {
+function Invoke-RawInstallerProcess([string]$Source, [string]$OutputPath) {
     $nestedPowerShell = Join-Path $PSHOME "powershell.exe"
-    $installCommand = '$ProgressPreference = ''SilentlyContinue''; Invoke-RestMethod -UseBasicParsing $env:MARGINALIA_TEST_INSTALL_URL | Invoke-Expression'
+    $installCommand = '$ProgressPreference = ''SilentlyContinue''; $source = $env:MARGINALIA_TEST_INSTALL_URL; if (Test-Path -LiteralPath $source) { Get-Content -Raw -LiteralPath $source | Invoke-Expression } else { Invoke-RestMethod -UseBasicParsing $source | Invoke-Expression }'
     $oldInstallUrl = $env:MARGINALIA_TEST_INSTALL_URL
     $oldErrorActionPreference = $ErrorActionPreference
     try {
-        $env:MARGINALIA_TEST_INSTALL_URL = $Url
+        $env:MARGINALIA_TEST_INSTALL_URL = $Source
         $ErrorActionPreference = "Continue"
         $output = @(& $nestedPowerShell -NoProfile -ExecutionPolicy Bypass -Command $installCommand 2>&1)
         $exitCode = $LASTEXITCODE
@@ -631,6 +631,7 @@ function Invoke-PredecessorMigration(
     $appPidFile = Join-Path (Join-Path (Join-Path $migrationHome ".marginalia") "runtime") ".marginalia\server.pid"
     $legacyTokenFile = Join-Path $legacyVault ".marginalia\daemon.token"
     $predecessorInstaller = Join-Path $migrationHome "predecessor-install.ps1"
+    $predecessorCompatInstaller = Join-Path $migrationHome "predecessor-install.ps51-compat.ps1"
     $predecessorManifest = Join-Path $migrationHome "predecessor-manifest.json"
     $trackedProcessIds = @()
     $legacyCli = $null
@@ -643,7 +644,6 @@ function Invoke-PredecessorMigration(
         "MARGINALIA_NO_MCP", "MARGINALIA_NO_OPEN", "MARGINALIA_NO_UPDATE_SHELL",
         "MARGINALIA_VAULT", "MARGINALIA_ONBOARD_NONINTERACTIVE",
         "MARGINALIA_LLM_PROVIDER", "MARGINALIA_EXPECTED_VERSION", "MARGINALIA_MANIFEST",
-        "MARGINALIA_WHEEL",
         "MARGINALIA_DEFAULT_MANIFEST_URL", "MARGINALIA_TEST_FAIL_ACTIVATION",
         "MARGINALIA_REAL_UV", "MARGINALIA_TEST_INSTALL_URL"
     )
@@ -717,15 +717,34 @@ function Invoke-PredecessorMigration(
         Write-Host "PREDECESSOR_INSTALL_SHA256=$predecessorInstallSha"
         Write-Host "PREDECESSOR_MANIFEST_URL=$predecessorManifestUrl"
         Write-Host "PREDECESSOR_MANIFEST_SHA256=$predecessorManifestSha"
-        Write-Host "PREDECESSOR_BOOTSTRAP_MODE=successor-installer-with-immutable-manifest"
-
-        $predecessorMetadata = Get-Content -Raw -LiteralPath $predecessorManifest | ConvertFrom-Json
-        $env:MARGINALIA_WHEEL = [string]$predecessorMetadata.wheel_url
-        $predecessorOutput = Join-Path $migrationHome "predecessor-install.out"
-        if ((Invoke-RawInstallerProcess $Url $predecessorOutput) -ne 0) {
-            throw "immutable predecessor artifact installation failed"
+        $predecessorSource = [IO.File]::ReadAllText($predecessorInstaller)
+        $legacyVersionProbe = 'version("marginalia")'
+        $compatVersionProbe = "version(''marginalia'')"
+        if ([regex]::Matches(
+                $predecessorSource,
+                [regex]::Escape($legacyVersionProbe)
+            ).Count -ne 3) {
+            throw "immutable predecessor installer version-probe contract changed"
         }
-        Remove-Item Env:MARGINALIA_WHEEL
+        $predecessorCompatSource = $predecessorSource.Replace(
+            $legacyVersionProbe,
+            $compatVersionProbe
+        )
+        [IO.File]::WriteAllText(
+            $predecessorCompatInstaller,
+            $predecessorCompatSource,
+            [Text.UTF8Encoding]::new($false)
+        )
+        $predecessorCompatSha = (
+            Get-FileHash -Algorithm SHA256 -LiteralPath $predecessorCompatInstaller
+        ).Hash.ToLowerInvariant()
+        Write-Host "PREDECESSOR_BOOTSTRAP_MODE=verified-ps51-quote-compat-copy"
+        Write-Host "PREDECESSOR_COMPAT_INSTALL_SHA256=$predecessorCompatSha"
+
+        $predecessorOutput = Join-Path $migrationHome "predecessor-install.out"
+        if ((Invoke-RawInstallerProcess $predecessorCompatInstaller $predecessorOutput) -ne 0) {
+            throw "immutable predecessor compatibility installation failed"
+        }
         if ($FailAfterInstallBeforeStatus) {
             throw "forced predecessor failure before status"
         }
