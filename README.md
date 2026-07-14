@@ -4,17 +4,12 @@ One-shot installer for [Marginalia](https://github.com/OktoLabsAI/marginalia), a
 local-first knowledge graph you can drive from Claude Code (MCP), the CLI, or as
 a Python library.
 
-The current public prerelease is `0.0.42`: source tag
-`61c3347de7e5b859d23dcd0a7bee4b17dd162cfe`, wheel
-[`marginalia-0.0.42-py3-none-any.whl`](https://github.com/OktoLabsAI/marginalia-dist/releases/download/v0.0.42/marginalia-0.0.42-py3-none-any.whl),
-SHA-256 `ed3b1e41da1df17ed4e02b32e8ff5570fbd0207eac0d1675968bc250246406d6`
-(785,426 bytes; 139 wheel members). All six source jobs passed on the exact tagged merge SHA.
-This corrective release fixes the native Windows daemon ownership failures found in immutable
-`0.0.41`, restores app-first browser launch and application-scoped multi-vault management, and
-allows explicitly approved keyless private-LAN model endpoints. The corrected wheel gives cold
-Windows startup and foreground browser opening a 60-second readiness budget. Its exact public
-distribution and Linux Docker+tmux gates are green; the real interactive Windows PowerShell 5.1
-lifecycle remains before promotion. The `0.0.41` tag and wheel remain immutable historical records.
+The current public release is `0.0.43`: source tag
+`e15d65a7c3baf018ade42910e64947dad882e9d5`, wheel
+[`marginalia-0.0.43-py3-none-any.whl`](https://github.com/OktoLabsAI/marginalia-dist/releases/download/v0.0.43/marginalia-0.0.43-py3-none-any.whl),
+SHA-256 `2ca924eadbad3819a32679fb4f2076e251f12921080c7510d281147ffad1ee44`
+(785,426 bytes). It carries the corrected app-first browser launch, application-scoped multi-vault
+management, keyless private-LAN model support, and slower-host startup readiness behavior.
 
 ## Install On macOS Or Linux
 
@@ -24,8 +19,7 @@ curl -fsSL https://raw.githubusercontent.com/OktoLabsAI/marginalia-dist/main/ins
 
 ## Install On Windows
 
-The installer currently resolves the `0.0.42` corrective prerelease. Stable promotion waits for
-the retained native PowerShell lifecycle evidence described below.
+The installer resolves the stable `0.0.43` release.
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/OktoLabsAI/marginalia-dist/main/install.ps1 | iex"

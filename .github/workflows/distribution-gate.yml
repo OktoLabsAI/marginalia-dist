@@ -250,6 +250,7 @@ jobs:
               "0.0.40": "302c56b23e29dfe1bbf79eeff5efc63c72b8d34f",
               "0.0.41": "aae59db84c2abd0e915ac4cb72c08e60209abe34",
               "0.0.42": "61c3347de7e5b859d23dcd0a7bee4b17dd162cfe",
+              "0.0.43": "e15d65a7c3baf018ade42910e64947dad882e9d5",
           }
           assert version in operator_verified_source_commits, (
               f"v{version} has no operator-verified private source tag pin"
@@ -313,7 +314,7 @@ jobs:
               )
           except urllib.error.HTTPError as error:
               raise AssertionError(
-                  f"could not read public marginalia-dist prerelease v{version} "
+                  f"could not read public marginalia-dist release v{version} "
                   f"via the GitHub API (HTTP {error.code})"
               ) from error
           assert release["tag_name"] == f"v{version}", (
@@ -322,11 +323,11 @@ jobs:
           assert release["draft"] is False, (
               "the distribution release must not be a draft"
           )
-          assert release["prerelease"] is True, (
-              "the distribution release must be a prerelease"
+          assert release["prerelease"] is False, (
+              "the distribution release must be stable"
           )
           assert len(release["assets"]) == 1, (
-              "the distribution prerelease must contain exactly one asset"
+              "the distribution release must contain exactly one asset"
           )
           asset = release["assets"][0]
           assert asset["name"] == wheel, (
