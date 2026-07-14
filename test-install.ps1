@@ -899,9 +899,9 @@ function Invoke-ReleaseLifecycle(
     }
     Assert-TokenUnchanged $tokenPath $initialToken
     $realUv = (Get-Command uv -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
-    $toolRoot = ([string](& $realUv tool dir | Select-Object -First 1)).Trim()
-    if ($LASTEXITCODE -ne 0 -or -not $toolRoot) {
-        throw "could not resolve uv tool directory after running update"
+    $toolRoot = [IO.Path]::GetFullPath($env:UV_TOOL_DIR)
+    if (-not (Test-Path -LiteralPath $toolRoot -PathType Container)) {
+        throw "uv tool directory disappeared after running update: $toolRoot"
     }
     $rollbackSentinel = Join-Path (Join-Path $toolRoot "marginalia") `
         ".release-lifecycle-previous-tool-sentinel"
