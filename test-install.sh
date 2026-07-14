@@ -1053,12 +1053,30 @@ run_predecessor_migration() (
   [ -n "$migrated_pid" ] && [ "$migrated_pid" != "$rollback_pid" ] && kill -0 "$migrated_pid"
   app_pid_file="$HOME/.marginalia/runtime/.marginalia/server.pid"
   app_token_file="$HOME/.marginalia/daemon-7777.token"
-  [ -f "$app_pid_file" ]
-  [ ! -e "$legacy_pid_file" ]
-  [ -s "$app_token_file" ]
-  [ "$(sha256sum "$app_token_file" | awk '{print $1}')" = "$token_sha" ]
-  [ "$(sha256sum "$legacy_token_file" | awk '{print $1}')" = "$token_sha" ]
-  [ ! -e "$sentinel" ]
+  [ -f "$app_pid_file" ] || {
+    echo "successor migration did not create the application PID record" >&2
+    return 1
+  }
+  [ ! -e "$legacy_pid_file" ] || {
+    echo "successor migration retained the legacy vault PID record" >&2
+    return 1
+  }
+  [ -s "$app_token_file" ] || {
+    echo "successor migration did not create the application capability token" >&2
+    return 1
+  }
+  [ "$(sha256sum "$app_token_file" | awk '{print $1}')" = "$token_sha" ] || {
+    echo "successor migration rotated the application capability token" >&2
+    return 1
+  }
+  [ "$(sha256sum "$legacy_token_file" | awk '{print $1}')" = "$token_sha" ] || {
+    echo "successor migration modified the immutable legacy capability token" >&2
+    return 1
+  }
+  [ ! -e "$sentinel" ] || {
+    echo "successor migration retained the predecessor-only tool sentinel" >&2
+    return 1
+  }
   marginalia stop
   wait_for_daemon_stopped "$migrated_pid" 7777 8201
   echo RELEASE_LIFECYCLE_PREDECESSOR_MIGRATION_OK
@@ -1480,6 +1498,33 @@ wait_for_text() {
   done
 }
 
+wait_for_pane_success() {
+  local timeout="$1" start now pane_dead pane_status
+  start="$(date +%s)"
+  while true; do
+    pane_dead="$(tmux display-message -p -t "$SESSION" '#{pane_dead}' 2>/dev/null || true)"
+    if [ "$pane_dead" = "1" ]; then
+      pane_status="$(tmux display-message -p -t "$SESSION" \
+        '#{pane_dead_status}' 2>/dev/null || true)"
+      capture
+      if [ "$pane_status" != "0" ]; then
+        printf 'tmux pane exited with status %s after success marker; evidence: %s\n' \
+          "${pane_status:-unknown}" "$EVIDENCE" >&2
+        return 1
+      fi
+      return 0
+    fi
+    now="$(date +%s)"
+    if [ $((now - start)) -ge "$timeout" ]; then
+      capture
+      printf 'timed out waiting for tmux pane to exit after success marker; evidence: %s\n' \
+        "$EVIDENCE" >&2
+      return 1
+    fi
+    sleep 1
+  done
+}
+
 drive_profile() {
   case "$PROFILE" in
     interactive)
@@ -1672,7 +1717,7 @@ run_host_tmux() {
   drive_profile
   if [ "$PROFILE" != "interactive" ]; then
     wait_for_text "MAC_TMUX_HUMAN_INSTALL_OK" 1800
-    capture
+    wait_for_pane_success 30
     if profile_uses_fake_secret; then
       if grep -q 'sk-fake-public-installer-test' "$EVIDENCE"; then
         die "fake hosted secret leaked into tmux evidence: $EVIDENCE"
@@ -1702,7 +1747,7 @@ run_docker_tmux() {
     else
       wait_for_text "DOCKER_TMUX_HUMAN_INSTALL_OK" 2400
     fi
-    capture
+    wait_for_pane_success 30
     if profile_uses_fake_secret; then
       if grep -q 'sk-fake-public-installer-test' "$EVIDENCE"; then
         die "fake hosted secret leaked into tmux evidence: $EVIDENCE"
