@@ -96,7 +96,6 @@ jobs:
           import hashlib
           import io
           import json
-          import os
           import re
           import urllib.error
           import urllib.request
@@ -161,34 +160,17 @@ jobs:
               "the public distribution tag must ultimately resolve to a commit"
           )
 
-          # v0.0.40 predates the strict driver-tag rule and stays immutable at its
-          # historical tag commit. New releases require tag == the exact atomic
-          # pre-evidence driver. Once Linux evidence exists, its self-verified
-          # DRIVER_COMMIT remains the stable comparison for later evidence commits.
-          historical_dist_tag_commits = {
+          # Public Actions cannot discover private source history, but public dist
+          # tags are independently resolvable. Pin each operator-verified atomic
+          # driver after its tag is created; later evidence commits never move it.
+          operator_verified_dist_tag_commits = {
               "0.0.40": "19847892b7e129225011d21d6d1f2ce00f996458",
+              "0.0.41": "92bebfac1347d60a84281e3ca4692565fd954ffe",
           }
-          if version in historical_dist_tag_commits:
-              expected_dist_tag_commit = historical_dist_tag_commits[version]
-          else:
-              evidence_path = Path(
-                  f"evidence/v{version}/linux-docker-tmux-release-lifecycle.txt"
-              )
-              if evidence_path.is_file():
-                  driver_matches = re.findall(
-                      r"(?m)^DRIVER_COMMIT=([0-9a-f]{40})$",
-                      evidence_path.read_text(),
-                  )
-                  assert len(driver_matches) == 1, (
-                      "Linux evidence must record exactly one canonical DRIVER_COMMIT"
-                  )
-                  expected_dist_tag_commit = driver_matches[0]
-              else:
-                  expected_dist_tag_commit = os.environ.get("GITHUB_SHA", "")
-                  assert re.fullmatch(r"[0-9a-f]{40}", expected_dist_tag_commit), (
-                      "pre-evidence distribution validation requires the exact GITHUB_SHA"
-                  )
-          assert tag_target["sha"] == expected_dist_tag_commit, (
+          assert version in operator_verified_dist_tag_commits, (
+              f"v{version} has no operator-verified public distribution tag pin"
+          )
+          assert tag_target["sha"] == operator_verified_dist_tag_commits[version], (
               "the public distribution tag does not resolve to the atomic driver commit"
           )
 
@@ -1017,7 +999,7 @@ jobs:
           foreach ($functionName in @(
             "Test-ChildProcessAlive",
             "Test-ChildTcpPort",
-            "Read-TestServerProcessId",
+            "Read-ChildServerProcessId",
             "Invoke-PredecessorMigration"
           )) {
             $functionAst = $childAst.Find(

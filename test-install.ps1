@@ -424,6 +424,34 @@ function Test-ChildProcessAlive([int]$ProcessId) {
     }
 }
 
+function Read-ChildServerProcessId([string]$Path) {
+    try {
+        $record = Get-Item -LiteralPath $Path -ErrorAction Stop
+        if ($record.Length -gt 16384) { return 0 }
+        $raw = (Get-Content -Raw -LiteralPath $Path -ErrorAction Stop).Trim()
+    } catch {
+        return 0
+    }
+    if (-not $raw) { return 0 }
+    $recordProcessId = 0
+    if ([int]::TryParse($raw, [ref]$recordProcessId)) {
+        if ($recordProcessId -gt 0) { return $recordProcessId }
+        return 0
+    }
+    try {
+        $payload = ConvertFrom-Json $raw -ErrorAction Stop
+    } catch {
+        return 0
+    }
+    if ($null -eq $payload -or -not ($payload.PSObject.Properties.Name -contains "pid")) {
+        return 0
+    }
+    $recordProcessId = 0
+    if (-not ([int]::TryParse([string]$payload.pid, [ref]$recordProcessId))) { return 0 }
+    if ($recordProcessId -gt 0) { return $recordProcessId }
+    return 0
+}
+
 function Test-ChildTcpPort([int]$Port) {
     $client = [Net.Sockets.TcpClient]::new()
     try {
@@ -810,8 +838,8 @@ function Invoke-PredecessorMigration(
             Remove-Item Env:MARGINALIA_TEST_FAIL_ACTIVATION -ErrorAction SilentlyContinue
             Remove-Item Env:MARGINALIA_REAL_UV -ErrorAction SilentlyContinue
 
-            $legacyRecordProcessId = Read-TestServerProcessId $legacyPidFile
-            $appRecordProcessId = Read-TestServerProcessId $appPidFile
+            $legacyRecordProcessId = Read-ChildServerProcessId $legacyPidFile
+            $appRecordProcessId = Read-ChildServerProcessId $appPidFile
             $cleanupProcessIds = @(
                 @($trackedProcessIds)
                 $legacyRecordProcessId
