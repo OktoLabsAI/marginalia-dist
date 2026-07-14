@@ -281,9 +281,14 @@ byte-compares itself with the exact public raw commit and pins `install.ps1`
 and `release-manifest.json` to that same SHA. The profile requires the real
 Windows PowerShell 5.1 host and records `INPUT_REDIRECTED=False`; it does not
 prompt because the default installation is app-first. It must end with
-`WINDOWS_RELEASE_LIFECYCLE_OK`. Its phase markers first prove the same exact
-immutable-v0.0.40 running predecessor, forced-failure rollback, and successful
-application-scope migration as Linux. They then cover app-first installation with
+`WINDOWS_RELEASE_LIFECYCLE_OK`. The profile SHA-verifies the immutable v0.0.40
+installer and manifest. Because that historical PowerShell installer cannot preserve
+the quotes in its native Python version probe under PowerShell 5.1, the driver records
+`PREDECESSOR_BOOTSTRAP_MODE=successor-installer-with-immutable-manifest` and uses the
+pinned successor installer with the immutable predecessor manifest to materialize the
+exact v0.0.40 wheel. Its phase markers then prove the running predecessor,
+forced-failure rollback, and successful application-scope migration. They continue
+with app-first installation with
 no forced vault, managed-vault creation, plain status and SPA/UI access,
 stopped and running updates, custom-port refusal, canonical locked application-owner refusal,
 hash-verified restoration of a previous-tool-only sentinel after forced

@@ -716,10 +716,11 @@ function Invoke-PredecessorMigration(
         Write-Host "PREDECESSOR_INSTALL_SHA256=$predecessorInstallSha"
         Write-Host "PREDECESSOR_MANIFEST_URL=$predecessorManifestUrl"
         Write-Host "PREDECESSOR_MANIFEST_SHA256=$predecessorManifestSha"
+        Write-Host "PREDECESSOR_BOOTSTRAP_MODE=successor-installer-with-immutable-manifest"
 
         $predecessorOutput = Join-Path $migrationHome "predecessor-install.out"
-        if ((Invoke-RawInstallerProcess $predecessorInstallUrl $predecessorOutput) -ne 0) {
-            throw "immutable predecessor installation failed"
+        if ((Invoke-RawInstallerProcess $Url $predecessorOutput) -ne 0) {
+            throw "immutable predecessor artifact installation failed"
         }
         if ($FailAfterInstallBeforeStatus) {
             throw "forced predecessor failure before status"

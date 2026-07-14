@@ -328,7 +328,7 @@ function Get-ToolVersion([string]$Root) {
     $python = Join-Path (Join-Path $Root "marginalia") "Scripts\python.exe"
     if (-not (Test-Path $python)) { return "" }
     try {
-        return ([string](& $python -c 'import importlib.metadata; print(importlib.metadata.version("marginalia"))')).Trim()
+        return ([string](& $python -c 'import importlib.metadata; print(importlib.metadata.version(''marginalia''))')).Trim()
     } catch {
         return ""
     }
@@ -677,7 +677,7 @@ Run-Checked "uv" @("venv", "--python", $PyVersion, $stageVenv)
 $stagePython = Join-Path $stageVenv "Scripts\python.exe"
 $stageCli = Join-Path $stageVenv "Scripts\marginalia.exe"
 Run-Checked "uv" @("pip", "install", "--python", $stagePython, $spec)
-$candidateVersion = ([string](& $stagePython -c 'import importlib.metadata; print(importlib.metadata.version("marginalia"))')).Trim()
+$candidateVersion = ([string](& $stagePython -c 'import importlib.metadata; print(importlib.metadata.version(''marginalia''))')).Trim()
 if ($ExpectedVersion -and $candidateVersion -ne $ExpectedVersion) {
     Die "staged Marginalia $candidateVersion, expected $ExpectedVersion"
 }
@@ -810,7 +810,7 @@ $toolPython = Join-Path (Join-Path $toolRoot "marginalia") "Scripts\python.exe"
 if (-not (Test-Path $toolPython)) {
     Die "could not locate Marginalia's uv-managed Python at $toolPython"
 }
-$installedVersion = [string](& $toolPython -c 'import importlib.metadata; print(importlib.metadata.version("marginalia"))')
+$installedVersion = [string](& $toolPython -c 'import importlib.metadata; print(importlib.metadata.version(''marginalia''))')
 $installedVersion = $installedVersion.Trim()
 if ($installedVersion -ne $candidateVersion) {
     Die "installed Marginalia $installedVersion, expected staged $candidateVersion"

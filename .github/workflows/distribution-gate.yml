@@ -1001,6 +1001,8 @@ jobs:
             '6856a0bac3c424a06ce865e2adff1a28906c8e3cbe7ea9603cddae92b08fa29d',
             '619d45919b506757442b758a4898e865e5600c7da12d8c83677bb3080414c5d8',
             'Invoke-PredecessorMigration $InstallUrl $ExpectedVersion $ManifestUrl $TestHome',
+            'PREDECESSOR_BOOTSTRAP_MODE=successor-installer-with-immutable-manifest',
+            'Invoke-RawInstallerProcess $Url $predecessorOutput',
             '.release-lifecycle-previous-tool-sentinel',
             'RELEASE_LIFECYCLE_PREVIOUS_TOOL_SENTINEL_SHA256=',
             '$Profile -in @("interactive", "release-lifecycle")',
@@ -1016,6 +1018,9 @@ jobs:
             'Remove-Item Env:MARGINALIA_VAULT -ErrorAction SilentlyContinue',
             'Export-PublicEvidence',
             'Initialize-TestSandbox',
+            '"marginalia-install-test-" + [guid]::NewGuid().ToString("N").Substring(0, 12)',
+            '$oldErrorActionPreference = $ErrorActionPreference',
+            '$ErrorActionPreference = "Continue"',
             'Invoke-ReleaseLifecycle $sandboxCli'
           )) {
             if (-not $tester.Contains($required)) {
@@ -1034,6 +1039,16 @@ jobs:
               $sentinelCreateIndex -ge $livePidRefusalIndex -or
               $sentinelPathChecks -lt 4) {
             throw "Windows same-version refusal sentinel contract is incomplete"
+          }
+          $install = Get-Content -Raw -LiteralPath "install.ps1"
+          $safeVersionProbe = "version(''marginalia'')"
+          if ([regex]::Matches($install, [regex]::Escape($safeVersionProbe)).Count -ne 3 -or
+              $install.Contains('version("marginalia")')) {
+            throw "Windows native Python version probes do not preserve their string argument"
+          }
+          $nativeProbe = ([string](& python -c 'print(''WINDOWS_NATIVE_ARG_OK'')')).Trim()
+          if ($LASTEXITCODE -ne 0 -or $nativeProbe -ne "WINDOWS_NATIVE_ARG_OK") {
+            throw "Windows native Python argument probe failed"
           }
           if ($failed) { throw "PowerShell syntax validation failed" }
 
