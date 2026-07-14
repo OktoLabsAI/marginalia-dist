@@ -147,6 +147,65 @@ jobs:
             'RELEASE_LIFECYCLE_PREVIOUS_TOOL_SENTINEL_SHA256=492606abe5ae609d9281a0b2314451062adbe6a408e5db62cf2e38e48fca94b5' \
             "$EVIDENCE_41"
 
+          EVIDENCE_42=evidence/v0.0.42/linux-docker-tmux-release-lifecycle.txt
+          EVIDENCE_SHA_42=77913dbbc1819a5c1070b380065fa3152f5d82555d6f347788ba1ef974246d13
+          DRIVER_COMMIT_42=83ea8fcb89248b379ffa1f4742fa23c853a1f61b
+          DRIVER_SHA_42=f04740e2172492dc28587065e7ecd3e854f59f84a3afcef7a84d577fbfdc60ba
+          INSTALL_SHA_42=084c5396ad7b24b0c204b4223c4fd1f61f2827ec296fc967e57201213a17b53b
+          MANIFEST_SHA_42=45084d1cecc768fb8a5fdbe72966b9d95ca616dad41f3d965781a5fe421ca55a
+          test "$(sha256sum "$EVIDENCE_42" | awk '{print $1}')" = "$EVIDENCE_SHA_42"
+          test "$(wc -c < "$EVIDENCE_42" | tr -d ' ')" = 53650
+          test "$(wc -l < "$EVIDENCE_42" | tr -d ' ')" = 1938
+          grep -Fq "$EVIDENCE_42" README.md
+          grep -Fq "$EVIDENCE_SHA_42" README.md
+          grep -Fxq "DRIVER_COMMIT=$DRIVER_COMMIT_42" "$EVIDENCE_42"
+          grep -Fxq \
+            "DRIVER_URL=https://raw.githubusercontent.com/OktoLabsAI/marginalia-dist/$DRIVER_COMMIT_42/test-install.sh" \
+            "$EVIDENCE_42"
+          grep -Fxq "DRIVER_SHA256=$DRIVER_SHA_42" "$EVIDENCE_42"
+          grep -Fxq \
+            "INSTALL_URL=https://raw.githubusercontent.com/OktoLabsAI/marginalia-dist/$DRIVER_COMMIT_42/install.sh" \
+            "$EVIDENCE_42"
+          grep -Fxq "INSTALL_SHA256=$INSTALL_SHA_42" "$EVIDENCE_42"
+          grep -Fxq \
+            "MANIFEST_URL=https://raw.githubusercontent.com/OktoLabsAI/marginalia-dist/$DRIVER_COMMIT_42/release-manifest.json" \
+            "$EVIDENCE_42"
+          grep -Fxq "MANIFEST_SHA256=$MANIFEST_SHA_42" "$EVIDENCE_42"
+          grep -Fxq \
+            'PREDECESSOR_COMMIT=19847892b7e129225011d21d6d1f2ce00f996458' \
+            "$EVIDENCE_42"
+          grep -Fxq \
+            'PREDECESSOR_INSTALL_SHA256=55127f6a3ef35e7b0ae9bc0aeb506dc3c51b6695d9dfb759f73dd018b8870866' \
+            "$EVIDENCE_42"
+          grep -Fxq \
+            'PREDECESSOR_MANIFEST_SHA256=619d45919b506757442b758a4898e865e5600c7da12d8c83677bb3080414c5d8' \
+            "$EVIDENCE_42"
+          test "$(grep -Fc 'Pane is dead (status 0,' "$EVIDENCE_42")" -eq 1
+          grep -Fq \
+            'Marginalia UI is ready at http://127.0.0.1:7777/; browser launch skipped' \
+            "$EVIDENCE_42"
+          for marker in \
+            RELEASE_LIFECYCLE_PREDECESSOR_RUNNING_OK \
+            RELEASE_LIFECYCLE_PREDECESSOR_ROLLBACK_OK \
+            RELEASE_LIFECYCLE_PREDECESSOR_MIGRATION_OK \
+            RELEASE_LIFECYCLE_APP_FIRST_OK \
+            RELEASE_LIFECYCLE_FRESH_INSTALL_OK \
+            RELEASE_LIFECYCLE_STATUS_UI_OK \
+            RELEASE_LIFECYCLE_STOPPED_UPDATE_OK \
+            RELEASE_LIFECYCLE_RUNNING_UPDATE_OK \
+            RELEASE_LIFECYCLE_CUSTOM_PORT_REFUSAL_OK \
+            RELEASE_LIFECYCLE_LIVE_PID_REFUSAL_OK \
+            RELEASE_LIFECYCLE_PREVIOUS_TOOL_SENTINEL_OK \
+            RELEASE_LIFECYCLE_ACTIVATION_ROLLBACK_OK \
+            RELEASE_LIFECYCLE_FINAL_STOP_OK \
+            DOCKER_TMUX_RELEASE_LIFECYCLE_OK
+          do
+            test "$(grep -Fc "$marker" "$EVIDENCE_42")" -eq 1
+          done
+          grep -Fq \
+            'RELEASE_LIFECYCLE_PREVIOUS_TOOL_SENTINEL_SHA256=f90f3c91e5938d65a61c77548df4f0c5c9e90f78729977a5be4eb3b4933a27c4' \
+            "$EVIDENCE_42"
+
       - name: Verify manifest, installers, docs, and public wheel
         run: |
           python3 - <<'PY'

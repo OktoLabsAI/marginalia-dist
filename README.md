@@ -11,9 +11,10 @@ SHA-256 `238bcf05646e5948475fe4a6d02be141480ca344d7ee080b39ca7352a382399d`
 (785,387 bytes; 139 wheel members). All six source jobs passed on the exact tagged merge SHA.
 This corrective release fixes the native Windows daemon ownership failures found in immutable
 `0.0.41`, restores app-first browser launch and application-scoped multi-vault management, and
-allows explicitly approved keyless private-LAN model endpoints. It remains a prerelease until the
-exact public distribution, Linux Docker+tmux, and real interactive Windows PowerShell 5.1 gates
-are retained and green. The `0.0.41` tag and wheel remain immutable historical records.
+allows explicitly approved keyless private-LAN model endpoints. Its exact public distribution and
+Linux Docker+tmux gates are green; it remains a prerelease until the real interactive Windows
+PowerShell 5.1 lifecycle is retained and green. The `0.0.41` tag and wheel remain immutable
+historical records.
 
 ## Install On macOS Or Linux
 
@@ -222,6 +223,19 @@ then stops cleanly. The retained pane must contain
 the individual `RELEASE_LIFECYCLE_*_OK` markers identify every required phase.
 This profile is Linux-only and does not replace the separate real interactive
 Windows PowerShell rehearsal.
+
+### v0.0.42 Linux release evidence
+
+The v0.0.42 rehearsal fetched the driver from exact public dist commit
+`83ea8fcb89248b379ffa1f4742fa23c853a1f61b`, after all three jobs in
+[`distribution-gate` run 29356592561](https://github.com/OktoLabsAI/marginalia-dist/actions/runs/29356592561)
+passed on that SHA. Its retained transcript is
+[`evidence/v0.0.42/linux-docker-tmux-release-lifecycle.txt`](evidence/v0.0.42/linux-docker-tmux-release-lifecycle.txt),
+SHA-256 `77913dbbc1819a5c1070b380065fa3152f5d82555d6f347788ba1ef974246d13`
+(53,650 bytes; 1,938 lines). It records exact raw driver, installer, manifest, and immutable
+v0.0.40 predecessor URLs and SHA-256 values. Every lifecycle marker occurs exactly once, including
+predecessor rollback and migration, app-first zero-vault startup, stopped/running updates, refusal
+paths, activation rollback, and final stop. The final line records tmux pane status 0.
 
 ### Immutable v0.0.41 Linux-only evidence
 
