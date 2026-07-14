@@ -4,14 +4,22 @@ One-shot installer for [Marginalia](https://github.com/OktoLabsAI/marginalia), a
 local-first knowledge graph you can drive from Claude Code (MCP), the CLI, or as
 a Python library.
 
-The current public prerelease is `0.0.41`: source tag
+The current public prerelease is the immutable `0.0.41`: source tag
 `aae59db84c2abd0e915ac4cb72c08e60209abe34`, wheel
 [`marginalia-0.0.41-py3-none-any.whl`](https://github.com/OktoLabsAI/marginalia-dist/releases/download/v0.0.41/marginalia-0.0.41-py3-none-any.whl),
 SHA-256 `6842a55fe5e1180c67e81035342ee8b300f5ff2ce2aafbe48129d709a76dbfa6`.
 The exact Linux Docker+tmux lifecycle passed from public driver
 `93d23c4f2504f333bd2a89250afa84d1762f020b`; its retained status-0 evidence is recorded below.
-The real interactive Windows PowerShell 5.1 rehearsal is the only remaining release check, so
-`0.0.41` stays a prerelease until that evidence exists.
+The real interactive Windows PowerShell 5.1 rehearsal then exposed three daemon-ownership defects
+in the current wheel: Windows does not provide `os.fchmod`; its lifecycle lock covers a PID payload
+byte that status and stop must read; and its venv launcher PID can differ from the runtime PID that
+owns that lock. `0.0.41` is therefore permanently non-promotable, not a candidate waiting on one
+final gate. No successful Windows release-lifecycle evidence exists for it. Its tag and wheel remain
+immutable records; the fix requires a new source version and a complete rerun of the source,
+artifact, distribution, Linux, and Windows release gates for that new version.
+An unversioned source-candidate wheel has passed native Windows install plus daemon
+start/status/stop, but that diagnostic smoke is not release evidence. Explicit authorization of a
+new successor version is the sole current release blocker.
 
 ## Install On macOS Or Linux
 
@@ -21,11 +29,16 @@ curl -fsSL https://raw.githubusercontent.com/OktoLabsAI/marginalia-dist/main/ins
 
 ## Install On Windows
 
+**Known blocker:** the immutable `0.0.41` wheel cannot complete its Windows daemon lifecycle. Do
+not treat this command as a release-qualified Windows path until an authorized successor passes the
+native PowerShell lifecycle.
+
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/OktoLabsAI/marginalia-dist/main/install.ps1 | iex"
 ```
 
-This takes a fresh machine from zero to a running application wired into Claude Code:
+On macOS/Linux today, and on Windows only after a release-qualified successor, the installer takes
+a fresh machine from zero to a running application wired into Claude Code:
 
 1. installs [`uv`](https://docs.astral.sh/uv/) if missing and pins Python 3.12 (uv-managed — your system Python is untouched);
 2. downloads the released Marginalia wheel and installs the `marginalia` + `kg` commands;
@@ -218,9 +231,9 @@ the individual `RELEASE_LIFECYCLE_*_OK` markers identify every required phase.
 This profile is Linux-only and does not replace the separate real interactive
 Windows PowerShell rehearsal.
 
-### v0.0.41 Linux evidence
+### Immutable v0.0.41 Linux-only evidence
 
-The final v0.0.41 Linux rehearsal fetched the driver from exact public dist commit
+The retained v0.0.41 Linux rehearsal fetched the driver from exact public dist commit
 `93d23c4f2504f333bd2a89250afa84d1762f020b`, after all three jobs in
 [`distribution-gate` run 29333923002](https://github.com/OktoLabsAI/marginalia-dist/actions/runs/29333923002)
 passed on that SHA. Its retained transcript is
@@ -230,7 +243,8 @@ SHA-256 `ec2b9701e3ac3274a7f31e244ffeddc73537e7e434d59bda0d1c5e08d1ef5141`
 v0.0.40 predecessor URLs and SHA-256 values. Every lifecycle marker occurs exactly once, including
 the verified predecessor rollback and token-preserving application-scope migration, app-first
 zero-vault startup, stopped/running updates, refusal paths, activation rollback, and final stop.
-The final line records tmux pane status 0.
+The final line records tmux pane status 0. This proves the exact Linux lifecycle only; it is not
+successful cross-platform release evidence and does not override the Windows current-wheel blocker.
 
 ### Immutable historical v0.0.40 evidence
 
@@ -249,8 +263,9 @@ The final line records tmux pane status 0.
 That transcript is retained as immutable evidence for the already-published
 v0.0.40 artifact. Its authenticated-browser wording describes that historical
 wheel and is not evidence for the successor's plain loopback UI or app-scoped
-multi-vault lifecycle. The v0.0.41 evidence above independently proves the successor; the v0.0.40
-tag, manifest history, wheel, and transcript remain immutable historical records.
+multi-vault lifecycle. The v0.0.41 transcript above independently proves only its Linux lifecycle;
+the failed native Windows rehearsal makes that immutable artifact non-promotable. The v0.0.40 tag,
+manifest history, wheel, and transcript remain immutable historical records.
 
 The evidence, workflow, and this record must be committed together on `main`,
 and every `distribution-gate` job must pass on that exact evidence commit before
@@ -280,25 +295,24 @@ under its uniquely owned temp sandbox. For release-lifecycle, the driver
 byte-compares itself with the exact public raw commit and pins `install.ps1`
 and `release-manifest.json` to that same SHA. The profile requires the real
 Windows PowerShell 5.1 host and records `INPUT_REDIRECTED=False`; it does not
-prompt because the default installation is app-first. It must end with
-`WINDOWS_RELEASE_LIFECYCLE_OK`. The profile SHA-verifies the immutable v0.0.40
+prompt because the default installation is app-first. A promotable candidate must end with
+`WINDOWS_RELEASE_LIFECYCLE_OK`; no v0.0.41 rehearsal produced that successful release evidence.
+The profile SHA-verifies the immutable v0.0.40
 installer and manifest. Because that historical installer cannot preserve the quotes
 in its three native Python version probes under PowerShell 5.1, the driver creates a
 deterministic local compatibility copy changing only those probes, records
-`PREDECESSOR_BOOTSTRAP_MODE=verified-ps51-quote-compat-copy` and its SHA-256, then
-runs the predecessor's own install/start logic. Its phase markers prove the exact
-v0.0.40 wheel is running before the forced-failure rollback and successful
-application-scope migration. They continue
-with app-first installation with
-no forced vault, managed-vault creation, plain status and SPA/UI access,
-stopped and running updates, custom-port refusal, canonical locked application-owner refusal,
-hash-verified restoration of a previous-tool-only sentinel after forced
-activation failure, and final stop. Retain the sandbox; do not add `-Cleanup`
-to the evidence run. Publish only the deterministic `*.public.log` sanitized
-evidence. The `*.private.raw.log` PowerShell transcript can contain Windows
-user/machine metadata and must remain private. The tester stops any sandbox
-daemon even when a lifecycle assertion fails, while retaining both files for
+`PREDECESSOR_BOOTSTRAP_MODE=verified-ps51-quote-compat-copy` and its SHA-256. The native run then
+reached the exact v0.0.40 wheel and failed on its missing `os.fchmod` before a running-predecessor
+phase could complete. Current driver corrections are diagnostic history only: they do not prove a
+successful predecessor lifecycle, repair `0.0.41`, or provide Windows release evidence. A future
+authorized successor must exercise the complete lifecycle against its exact new wheel and exact
+green public driver; it must not claim a Windows predecessor-running phase that never completed.
+Retain the sandbox; do not add `-Cleanup` to an evidence run.
+Publish only the deterministic `*.public.log` sanitized evidence. The `*.private.raw.log`
+PowerShell transcript can contain Windows user/machine metadata and must remain private. The tester
+stops any sandbox daemon even when a lifecycle assertion fails, while retaining both files for
 diagnosis. It refuses unowned test directories and resource-name collisions.
+
 For a smaller noninteractive smoke check:
 
 ```powershell
