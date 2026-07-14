@@ -643,6 +643,7 @@ function Invoke-PredecessorMigration(
         "MARGINALIA_NO_MCP", "MARGINALIA_NO_OPEN", "MARGINALIA_NO_UPDATE_SHELL",
         "MARGINALIA_VAULT", "MARGINALIA_ONBOARD_NONINTERACTIVE",
         "MARGINALIA_LLM_PROVIDER", "MARGINALIA_EXPECTED_VERSION", "MARGINALIA_MANIFEST",
+        "MARGINALIA_WHEEL",
         "MARGINALIA_DEFAULT_MANIFEST_URL", "MARGINALIA_TEST_FAIL_ACTIVATION",
         "MARGINALIA_REAL_UV", "MARGINALIA_TEST_INSTALL_URL"
     )
@@ -718,10 +719,13 @@ function Invoke-PredecessorMigration(
         Write-Host "PREDECESSOR_MANIFEST_SHA256=$predecessorManifestSha"
         Write-Host "PREDECESSOR_BOOTSTRAP_MODE=successor-installer-with-immutable-manifest"
 
+        $predecessorMetadata = Get-Content -Raw -LiteralPath $predecessorManifest | ConvertFrom-Json
+        $env:MARGINALIA_WHEEL = [string]$predecessorMetadata.wheel_url
         $predecessorOutput = Join-Path $migrationHome "predecessor-install.out"
         if ((Invoke-RawInstallerProcess $Url $predecessorOutput) -ne 0) {
             throw "immutable predecessor artifact installation failed"
         }
+        Remove-Item Env:MARGINALIA_WHEEL
         if ($FailAfterInstallBeforeStatus) {
             throw "forced predecessor failure before status"
         }

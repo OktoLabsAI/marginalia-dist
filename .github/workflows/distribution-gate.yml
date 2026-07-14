@@ -1003,6 +1003,7 @@ jobs:
             'Invoke-PredecessorMigration $InstallUrl $ExpectedVersion $ManifestUrl $TestHome',
             'PREDECESSOR_BOOTSTRAP_MODE=successor-installer-with-immutable-manifest',
             'Invoke-RawInstallerProcess $Url $predecessorOutput',
+            '$env:MARGINALIA_WHEEL = [string]$predecessorMetadata.wheel_url',
             '.release-lifecycle-previous-tool-sentinel',
             'RELEASE_LIFECYCLE_PREVIOUS_TOOL_SENTINEL_SHA256=',
             '$Profile -in @("interactive", "release-lifecycle")',
