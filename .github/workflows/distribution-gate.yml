@@ -285,7 +285,7 @@ jobs:
           operator_verified_dist_tag_commits = {
               "0.0.40": "19847892b7e129225011d21d6d1f2ce00f996458",
               "0.0.41": "92bebfac1347d60a84281e3ca4692565fd954ffe",
-              "0.0.42": "acf004529196ed5e6e2a5b533b8c00cf348eb960",
+              "0.0.42": "098af62510d55b71438fb07a87ef249a8d7597c7",
           }
           expected_dist_tag_commit = operator_verified_dist_tag_commits.get(version)
           current_evidence = Path(
