@@ -218,6 +218,25 @@ the individual `RELEASE_LIFECYCLE_*_OK` markers identify every required phase.
 This profile is Linux-only and does not replace the separate real interactive
 Windows PowerShell rehearsal.
 
+### v0.0.43 Linux release evidence
+
+The v0.0.43 rehearsal fetched the driver from exact public dist commit
+`2fab7c6adde336e248047b043a5ca65429c29ede`, after all three jobs in
+[`distribution-gate` run 29363097517](https://github.com/OktoLabsAI/marginalia-dist/actions/runs/29363097517)
+passed on that SHA. Its retained transcript is
+[`evidence/v0.0.43/linux-docker-tmux-release-lifecycle.txt`](evidence/v0.0.43/linux-docker-tmux-release-lifecycle.txt),
+SHA-256 `67d9795b97fbaf4965453cd897dad44b79bdb1aa74544adfa6695b2c660e80f8`
+(53,477 bytes; 1,934 lines). It records exact raw driver, installer, manifest, and immutable
+v0.0.40 predecessor URLs and SHA-256 values. Every successor stage verifies the published
+v0.0.43 wheel SHA-256 `2ca924eadbad3819a32679fb4f2076e251f12921080c7510d281147ffad1ee44`; the
+only other wheel digest in the pane is the pinned immutable predecessor
+`8cdf7e0f604c5f21cb2c6ed79aecb5161ebe259835842c28795b47142b6293eb`. Every lifecycle marker
+occurs exactly once, including predecessor rollback and migration, app-first zero-vault startup
+with `marginalia --help` and `{"status":"ok"}` health on a reachable UI, stopped/running updates,
+refusal paths, activation rollback, and final stop. The final line records tmux pane status 0.
+This proves the exact Linux lifecycle only; it does not replace the separate real interactive
+Windows PowerShell rehearsal, which has still never passed for any published version.
+
 ### v0.0.42 Linux release evidence
 
 The corrected v0.0.42 rehearsal fetched the driver from exact public dist commit
