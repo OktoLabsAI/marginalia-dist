@@ -227,6 +227,31 @@ the individual `RELEASE_LIFECYCLE_*_OK` markers identify every required phase.
 This profile is Linux-only and does not replace the separate real interactive
 Windows PowerShell rehearsal.
 
+### v0.0.44 Linux release evidence
+
+The v0.0.44 rehearsal fetched the driver from exact public dist commit
+`99c8be9f2f4b7ea00943dd570bc8b92f5cfc69cb`, after all three jobs in
+[`distribution-gate` run 30479042461](https://github.com/OktoLabsAI/marginalia-dist/actions/runs/30479042461)
+passed on that SHA. That is the atomic bake commit: manifest, both installers, both testers,
+README, and the gate moved together, so no gate ran against a half-updated distribution.
+Its retained transcript is
+[`evidence/v0.0.44/linux-docker-tmux-release-lifecycle.txt`](evidence/v0.0.44/linux-docker-tmux-release-lifecycle.txt),
+SHA-256 `d9f56549f6d91677d7a59b74e476d48e03e71c28364240cfc4cfb55b9e223e61`
+(53,500 bytes; 1,936 lines). It records exact raw driver, installer, manifest, and immutable
+v0.0.40 predecessor URLs and SHA-256 values. Every successor stage verifies the published
+v0.0.44 wheel SHA-256 `fbab50524b107436c19b0f790d10358789eae45222d0bf3ebe4ba5b79af8fed1`; the
+only other wheel digest in the pane is the pinned immutable predecessor
+`8cdf7e0f604c5f21cb2c6ed79aecb5161ebe259835842c28795b47142b6293eb`. All thirteen
+`RELEASE_LIFECYCLE_*_OK` markers and the final `DOCKER_TMUX_RELEASE_LIFECYCLE_OK` occur exactly
+once, covering predecessor rollback and migration, app-first zero-vault startup, credential-free
+status and UI, stopped and running updates, custom-port refusal, unverified-live-PID refusal,
+previous-tool-sentinel restoration, activation rollback, and final stop. The final line records
+tmux pane status 0.
+
+This proves the exact Linux lifecycle only. It does not replace the separate real interactive
+Windows PowerShell 5.1 rehearsal, which has still never passed for any published version —
+`0.0.44` included. That is why `0.0.44` remains a prerelease.
+
 ### v0.0.43 Linux release evidence
 
 The v0.0.43 rehearsal fetched the driver from exact public dist commit
