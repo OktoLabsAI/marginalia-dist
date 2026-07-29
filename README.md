@@ -4,12 +4,20 @@ One-shot installer for [Marginalia](https://github.com/OktoLabsAI/marginalia), a
 local-first knowledge graph you can drive from Claude Code (MCP), the CLI, or as
 a Python library.
 
-The current public release is `0.0.43`: source tag
-`e15d65a7c3baf018ade42910e64947dad882e9d5`, wheel
-[`marginalia-0.0.43-py3-none-any.whl`](https://github.com/OktoLabsAI/marginalia-dist/releases/download/v0.0.43/marginalia-0.0.43-py3-none-any.whl),
-SHA-256 `2ca924eadbad3819a32679fb4f2076e251f12921080c7510d281147ffad1ee44`
-(785,426 bytes). It carries the corrected app-first browser launch, application-scoped multi-vault
-management, keyless private-LAN model support, and slower-host startup readiness behavior.
+The current public prerelease is `0.0.44`: source tag
+`07c2fd1e76a3ed562bbad46cb23028c27bc34295`, wheel
+[`marginalia-0.0.44-py3-none-any.whl`](https://github.com/OktoLabsAI/marginalia-dist/releases/download/v0.0.44/marginalia-0.0.44-py3-none-any.whl),
+SHA-256 `fbab50524b107436c19b0f790d10358789eae45222d0bf3ebe4ba5b79af8fed1`
+(1,022,801 bytes; 157 wheel members). All six required source jobs passed on the exact tagged
+SHA. It carries the ADR 0039 ingest-correctness work (integrity fence, generation sidecar,
+lease-guarded heal), the ADR 0040 semantic-quality pass, the effective-LLM-concurrency capacity
+owner, the three-tier laptop quality gate, judge rubric v2, and the reinstated `search_claims`
+answer partition.
+
+It stays a prerelease. No published Marginalia version, including `0.0.43`, has ever passed a
+real interactive Windows PowerShell 5.1 release lifecycle, and `0.0.44` inherits that gap
+unchanged. Promotion to stable waits on that evidence; the Linux Docker+tmux rehearsal is
+recorded separately below.
 
 ## Install On macOS Or Linux
 
@@ -19,7 +27,8 @@ curl -fsSL https://raw.githubusercontent.com/OktoLabsAI/marginalia-dist/main/ins
 
 ## Install On Windows
 
-The installer resolves the stable `0.0.43` release.
+The installer resolves the `0.0.44` prerelease. There is still no retained native
+PowerShell 5.1 lifecycle evidence for any published version, so treat this path as unverified.
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/OktoLabsAI/marginalia-dist/main/install.ps1 | iex"
