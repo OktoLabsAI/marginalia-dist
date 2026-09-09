@@ -36,9 +36,9 @@ set -euo pipefail
 # ── config ────────────────────────────────────────────────────────────────
 # The public distribution copy of this script bakes a release-wheel URL here so
 # `curl … | bash` needs no env. Empty in the source repo (which clones instead).
-DEFAULT_WHEEL_URL="${MARGINALIA_DEFAULT_WHEEL_URL:-https://github.com/OktoLabsAI/marginalia-dist/releases/download/v0.0.45/marginalia-0.0.45-py3-none-any.whl}"
+DEFAULT_WHEEL_URL="${MARGINALIA_DEFAULT_WHEEL_URL:-https://github.com/OktoLabsAI/marginalia-dist/releases/download/v0.0.46/marginalia-0.0.46-py3-none-any.whl}"
 DEFAULT_MANIFEST_URL="${MARGINALIA_DEFAULT_MANIFEST_URL:-https://raw.githubusercontent.com/OktoLabsAI/marginalia-dist/main/release-manifest.json}"
-EXPECTED_VERSION="${MARGINALIA_EXPECTED_VERSION:-0.0.45}"
+EXPECTED_VERSION="${MARGINALIA_EXPECTED_VERSION:-0.0.46}"
 EXTRAS="serve,litellm"
 PY_VERSION="3.12"
 REPO="${MARGINALIA_REPO:-git@github.com:OktoLabsAI/marginalia.git}"
@@ -993,6 +993,7 @@ if [ -n "${VAULT_DIR}" ]; then
 else
   info "vaults   : create and manage them in the Web UI"
 fi
+info "graph backend: chosen at vault creation, Okto Grafx by default (Ladybug or Neo4j selectable)"
 if [ -n "${SERVER_STARTED}" ]; then
   info "web UI   : ${REST_URL}/"
   info "stop     : marginalia stop"

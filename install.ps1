@@ -13,14 +13,14 @@ $ErrorActionPreference = "Stop"
 $DefaultWheelUrl = if ($env:MARGINALIA_DEFAULT_WHEEL_URL) {
     $env:MARGINALIA_DEFAULT_WHEEL_URL
 } else {
-    "https://github.com/OktoLabsAI/marginalia-dist/releases/download/v0.0.45/marginalia-0.0.45-py3-none-any.whl"
+    "https://github.com/OktoLabsAI/marginalia-dist/releases/download/v0.0.46/marginalia-0.0.46-py3-none-any.whl"
 }
 $DefaultManifestUrl = if ($env:MARGINALIA_DEFAULT_MANIFEST_URL) {
     $env:MARGINALIA_DEFAULT_MANIFEST_URL
 } else {
     "https://raw.githubusercontent.com/OktoLabsAI/marginalia-dist/main/release-manifest.json"
 }
-$ExpectedVersion = if ($env:MARGINALIA_EXPECTED_VERSION) { $env:MARGINALIA_EXPECTED_VERSION } else { "0.0.45" }
+$ExpectedVersion = if ($env:MARGINALIA_EXPECTED_VERSION) { $env:MARGINALIA_EXPECTED_VERSION } else { "0.0.46" }
 $Extras = "serve,litellm"
 $PyVersion = "3.12"
 $Repo = if ($env:MARGINALIA_REPO) { $env:MARGINALIA_REPO } else { "git@github.com:OktoLabsAI/marginalia.git" }
@@ -1056,6 +1056,7 @@ if ($upgrade) {
     Write-Host "Marginalia $installedVersion installed; daemon was not started." -ForegroundColor Green
 }
 Info "vaults   : managed independently in the application"
+Info "graph backend: chosen at vault creation, Okto Grafx by default (Ladybug or Neo4j selectable)"
 if ($serverStarted) {
     Info "web UI   : $RestUrl/"
     Info "stop     : marginalia stop"

@@ -4,10 +4,10 @@ One-shot installer for [Marginalia](https://github.com/OktoLabsAI/marginalia), a
 local-first knowledge graph you can drive from Claude Code (MCP), the CLI, or as
 a Python library.
 
-The current public prerelease is `0.0.45`: source tag
-`55a4c291d031ab79a0b858c2c4e18dcec4073765`, wheel
-[`marginalia-0.0.45-py3-none-any.whl`](https://github.com/OktoLabsAI/marginalia-dist/releases/download/v0.0.45/marginalia-0.0.45-py3-none-any.whl),
-SHA-256 `8a10b4d65d04e70a4612aba6788547c2a51bd31f3e9de446494d271b5cb7aaa9`.
+The current public prerelease is `0.0.46`: source tag
+`f4e3ce4e337374257e1a007ece2ab25524633aa2`, wheel
+[`marginalia-0.0.46-py3-none-any.whl`](https://github.com/OktoLabsAI/marginalia-dist/releases/download/v0.0.46/marginalia-0.0.46-py3-none-any.whl),
+SHA-256 `b5c3a825f7b734db62b2774c8a8cfb1b79ebfa23b8580d05619ae0b23dc5ab81`.
 It carries the ADR 0041 pluggable graph backend work: the storage-and-retrieval seam is now a
 `GraphStore`/`IndexStore` connector pair with three gating backends. **Okto Grafx (Okto Labs'
 own embedded engine) is now the default graph backend, installed out of the box with no opt-in
@@ -17,8 +17,16 @@ fully supported and selectable (`--backend ladybug`), and Neo4j remains selectab
 server-backed connector (`--backend neo4j`, `[neo4j]` extra). LoCoMo quality parity holds across
 all three backends within judge noise (ADR 0041, M6 Parity).
 
-It stays a prerelease. No published Marginalia version, including `0.0.44`, has ever passed a
-real interactive Windows PowerShell 5.1 release lifecycle, and `0.0.45` inherits that gap
+`0.0.46` rounds out that work with backend selection UX and a Grafx reembed fix: REST and MCP
+vault creation now default to Grafx and gate a non-loopback `storage_uri` behind the same
+remote-consent check as the CLI; each vault's graph backend is now visible in `marginalia status`,
+`marginalia vault list`, `GET /api/v1/vaults`/`GET /api/v1/status`, and the web UI; interactive
+`marginalia onboard` now prompts for the graph backend when `--backend` was not passed explicitly;
+and `kg reembed` no longer raises `EmbeddingDimMismatch` on its own live-graph read-back when a
+vault's embedder dimension changes (Grafx and Neo4j).
+
+It stays a prerelease. No published Marginalia version, including `0.0.44` and `0.0.45`, has ever
+passed a real interactive Windows PowerShell 5.1 release lifecycle, and `0.0.46` inherits that gap
 unchanged. Promotion to stable waits on that evidence; the Linux Docker+tmux rehearsal is
 recorded separately below.
 
@@ -30,7 +38,7 @@ curl -fsSL https://raw.githubusercontent.com/OktoLabsAI/marginalia-dist/main/ins
 
 ## Install On Windows
 
-The installer resolves the `0.0.45` prerelease. There is still no retained native
+The installer resolves the `0.0.46` prerelease. There is still no retained native
 PowerShell 5.1 lifecycle evidence for any published version, so treat this path as unverified.
 
 ```powershell
