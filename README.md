@@ -238,6 +238,52 @@ the individual `RELEASE_LIFECYCLE_*_OK` markers identify every required phase.
 This profile is Linux-only and does not replace the separate real interactive
 Windows PowerShell rehearsal.
 
+### v0.0.46 Linux release rehearsal (exact driver commit)
+
+Ran 2026-09-09. This run satisfies section 6's exact-commit driver requirement
+for the Linux platform: it fetched `test-install.sh` from the exact public
+dist-main commit `c817e3c2f834ca5f0f3fbec721024824d20e0be1` (the pushed tip of
+`origin/main`, i.e. the `release: 0.0.46` commit) and ran
+`./test-install.sh --docker-tmux --profile release-lifecycle --driver-commit
+c817e3c2f834ca5f0f3fbec721024824d20e0be1`. The pane header records
+`DRIVER_COMMIT=c817e3c2f834ca5f0f3fbec721024824d20e0be1`, with the driver,
+installer, and manifest URLs and SHA-256 values all resolved from that pinned
+commit rather than a moving branch or local checkout. Its retained transcript
+is
+[`evidence/v0.0.46/linux-docker-tmux-release-lifecycle.txt`](evidence/v0.0.46/linux-docker-tmux-release-lifecycle.txt),
+SHA-256 `617dbfe64798c2ca166c02714c49ee91a3b8e2b8227d2386c64ab2d5c5fc7eef`
+(54,193 bytes; 1,954 lines). It records the exact raw driver/install/manifest
+URLs and SHA-256 values it verified, plus the pinned immutable v0.0.40
+predecessor's URL and SHA-256
+`8cdf7e0f604c5f21cb2c6ed79aecb5161ebe259835842c28795b47142b6293eb`. Every
+successor stage verifies the published `0.0.46` wheel SHA-256
+`b5c3a825f7b734db62b2774c8a8cfb1b79ebfa23b8580d05619ae0b23dc5ab81`, matching
+`release-manifest.json`. All thirteen `RELEASE_LIFECYCLE_*_OK` markers and the
+final `DOCKER_TMUX_RELEASE_LIFECYCLE_OK` occur exactly once, covering
+predecessor rollback and migration, app-first zero-vault startup,
+credential-free status and UI, stopped and running updates, custom-port
+refusal, unverified-live-PID refusal, previous-tool-sentinel restoration,
+activation rollback, and final stop. The final line records tmux pane status 0.
+
+The rehearsal container runs `--rm`, so its own managed vault does not survive
+the run for inspection. To confirm the default graph backend separately, a
+throwaway Ubuntu container (`marginalia-install-rehearsal-backend-check`,
+removed after the check, no new image left behind — it reused the
+already-cached `ubuntu:24.04` base) downloaded the exact published `0.0.46`
+wheel from its public release URL, verified its SHA-256 against
+`release-manifest.json` before installing, then ran
+`marginalia vault create backendcheck --no-use`, which wrote `backend: grafx`
+under `storage:` in the created vault's `marginalia.yaml`.
+
+This satisfies section 6's exact-commit driver requirement for the Linux
+rehearsal only. It does not by itself promote `0.0.46`: promotion additionally
+requires the separate real interactive Windows PowerShell 5.1 rehearsal, which
+has still never passed for any published version — `0.0.46` included — and the
+post-rehearsal `SOURCE_EVIDENCE_SHA`/`DIST_EVIDENCE_SHA` CI-gate verification,
+which has not been run against this commit. `0.0.46` remains a prerelease
+pending both, and this rehearsal deliberately did not attempt the Windows
+rehearsal or clear the release's prerelease flag.
+
 ### v0.0.45 Linux release rehearsal (exact driver commit)
 
 Ran 2026-09-09. This run satisfies section 6's exact-commit driver requirement
