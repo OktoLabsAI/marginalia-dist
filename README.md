@@ -4,18 +4,21 @@ One-shot installer for [Marginalia](https://github.com/OktoLabsAI/marginalia), a
 local-first knowledge graph you can drive from Claude Code (MCP), the CLI, or as
 a Python library.
 
-The current public prerelease is `0.0.44`: source tag
-`07c2fd1e76a3ed562bbad46cb23028c27bc34295`, wheel
-[`marginalia-0.0.44-py3-none-any.whl`](https://github.com/OktoLabsAI/marginalia-dist/releases/download/v0.0.44/marginalia-0.0.44-py3-none-any.whl),
-SHA-256 `fbab50524b107436c19b0f790d10358789eae45222d0bf3ebe4ba5b79af8fed1`
-(1,022,801 bytes; 157 wheel members). All six required source jobs passed on the exact tagged
-SHA. It carries the ADR 0039 ingest-correctness work (integrity fence, generation sidecar,
-lease-guarded heal), the ADR 0040 semantic-quality pass, the effective-LLM-concurrency capacity
-owner, the three-tier laptop quality gate, judge rubric v2, and the reinstated `search_claims`
-answer partition.
+The current public prerelease is `0.0.45`: source tag
+`55a4c291d031ab79a0b858c2c4e18dcec4073765`, wheel
+[`marginalia-0.0.45-py3-none-any.whl`](https://github.com/OktoLabsAI/marginalia-dist/releases/download/v0.0.45/marginalia-0.0.45-py3-none-any.whl),
+SHA-256 `8a10b4d65d04e70a4612aba6788547c2a51bd31f3e9de446494d271b5cb7aaa9`.
+It carries the ADR 0041 pluggable graph backend work: the storage-and-retrieval seam is now a
+`GraphStore`/`IndexStore` connector pair with three gating backends. **Okto Grafx (Okto Labs'
+own embedded engine) is now the default graph backend, installed out of the box with no opt-in
+flag** — a post-M6 owner decision (D-94) promoted it from the earlier experimental,
+`--accept-experimental`-gated path to Marginalia's non-experimental default. Ladybug remains
+fully supported and selectable (`--backend ladybug`), and Neo4j remains selectable as a
+server-backed connector (`--backend neo4j`, `[neo4j]` extra). LoCoMo quality parity holds across
+all three backends within judge noise (ADR 0041, M6 Parity).
 
-It stays a prerelease. No published Marginalia version, including `0.0.43`, has ever passed a
-real interactive Windows PowerShell 5.1 release lifecycle, and `0.0.44` inherits that gap
+It stays a prerelease. No published Marginalia version, including `0.0.44`, has ever passed a
+real interactive Windows PowerShell 5.1 release lifecycle, and `0.0.45` inherits that gap
 unchanged. Promotion to stable waits on that evidence; the Linux Docker+tmux rehearsal is
 recorded separately below.
 
@@ -27,7 +30,7 @@ curl -fsSL https://raw.githubusercontent.com/OktoLabsAI/marginalia-dist/main/ins
 
 ## Install On Windows
 
-The installer resolves the `0.0.44` prerelease. There is still no retained native
+The installer resolves the `0.0.45` prerelease. There is still no retained native
 PowerShell 5.1 lifecycle evidence for any published version, so treat this path as unverified.
 
 ```powershell
