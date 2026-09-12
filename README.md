@@ -4,29 +4,40 @@ One-shot installer for [Marginalia](https://github.com/OktoLabsAI/marginalia), a
 local-first knowledge graph you can drive from Claude Code (MCP), the CLI, or as
 a Python library.
 
-The current public prerelease is `0.0.46`: source tag
-`f4e3ce4e337374257e1a007ece2ab25524633aa2`, wheel
-[`marginalia-0.0.46-py3-none-any.whl`](https://github.com/OktoLabsAI/marginalia-dist/releases/download/v0.0.46/marginalia-0.0.46-py3-none-any.whl),
-SHA-256 `b5c3a825f7b734db62b2774c8a8cfb1b79ebfa23b8580d05619ae0b23dc5ab81`.
-It carries the ADR 0041 pluggable graph backend work: the storage-and-retrieval seam is now a
-`GraphStore`/`IndexStore` connector pair with three gating backends. **Okto Grafx (Okto Labs'
-own embedded engine) is now the default graph backend, installed out of the box with no opt-in
-flag** — a post-M6 owner decision (D-94) promoted it from the earlier experimental,
-`--accept-experimental`-gated path to Marginalia's non-experimental default. Ladybug remains
-fully supported and selectable (`--backend ladybug`), and Neo4j remains selectable as a
-server-backed connector (`--backend neo4j`, `[neo4j]` extra). LoCoMo quality parity holds across
-all three backends within judge noise (ADR 0041, M6 Parity).
+The current public prerelease is `0.0.47`: source tag
+`ec523eced42e6616de825ee5d8df9e6c61dfaf0c`, wheel
+[`marginalia-0.0.47-py3-none-any.whl`](https://github.com/OktoLabsAI/marginalia-dist/releases/download/v0.0.47/marginalia-0.0.47-py3-none-any.whl),
+SHA-256 `b9c62fb2e8690c3f62b0ad26b3bf84535fd245e8dc2c2a2171bb7ef2b2dd8d14`.
 
-`0.0.46` rounds out that work with backend selection UX and a Grafx reembed fix: REST and MCP
-vault creation now default to Grafx and gate a non-loopback `storage_uri` behind the same
-remote-consent check as the CLI; each vault's graph backend is now visible in `marginalia status`,
-`marginalia vault list`, `GET /api/v1/vaults`/`GET /api/v1/status`, and the web UI; interactive
-`marginalia onboard` now prompts for the graph backend when `--backend` was not passed explicitly;
-and `kg reembed` no longer raises `EmbeddingDimMismatch` on its own live-graph read-back when a
-vault's embedder dimension changes (Grafx and Neo4j).
+`0.0.47` lowers the default ingest chunk size from 12,000 bytes to 6,000 bytes
+(`ingest.chunk_size_bytes` / `DEFAULT_CHUNK_SIZE_BYTES`). This is evidence-based: three repeats
+per configuration, manually adjudicated against a 103-fact anchored corpus, measured mean
+fact-recall 0.4045 (sd 0.0148) at 6000/0 versus 0.2362 (sd 0.0056) at 12000/0 — a 0.1683 gap,
+11 to 30 times either configuration's own standard deviation, with no overlap across any of the
+six runs.
 
-It stays a prerelease. No published Marginalia version, including `0.0.44` and `0.0.45`, has ever
-passed a real interactive Windows PowerShell 5.1 release lifecycle, and `0.0.46` inherits that gap
+**Migration consequence.** Vault config resolves `ingest.chunk_size_bytes` fresh from this
+default on every load — nothing is frozen into a vault's `marginalia.yaml` at creation time. Any
+vault that has never explicitly pinned `ingest.chunk_size_bytes` will, on the next
+add/edit/folder-watch touch of an already-ingested document, find its stored Blocks' chunking
+facet (12000) no longer matches the live config (6000); that orphans the existing Blocks for that
+document and the whole document is re-chunked and re-extracted from scratch on that touch, not
+just the changed hunk. Existing stored Blocks and their byte anchors are untouched until then —
+this is not a retroactive rewrite — and `kg rebuild` always uses the live config regardless of
+what any vault has pinned. To keep the previous chunking behavior, pin the old value explicitly
+before your next touch of an ingested document, e.g. `PATCH /api/v1/config` with
+`{"ingest": {"chunk_size_bytes": 12000}}`, or write `ingest: {chunk_size_bytes: 12000}` directly
+into the vault's `marginalia.yaml`.
+
+GitHub Actions is unavailable for this org (billing not enabled), so CI did not run for this
+release. Every required CI gate — docs generation, the eval/recall-floor gates, the full
+model-free test and acceptance suites, the wheel/dependency-contract/footprint checks, and the
+Neo4j backend gate — was instead reproduced locally against the exact tagged source commit; the
+Windows managed-credentials (DPAPI) gate could not be reproduced outside Windows and is not
+covered by any local substitute in this release.
+
+It stays a prerelease. No published Marginalia version, including `0.0.45` and `0.0.46`, has ever
+passed a real interactive Windows PowerShell 5.1 release lifecycle, and `0.0.47` inherits that gap
 unchanged. Promotion to stable waits on that evidence; the Linux Docker+tmux rehearsal is
 recorded separately below.
 
@@ -38,7 +49,7 @@ curl -fsSL https://raw.githubusercontent.com/OktoLabsAI/marginalia-dist/main/ins
 
 ## Install On Windows
 
-The installer resolves the `0.0.46` prerelease. There is still no retained native
+The installer resolves the `0.0.47` prerelease. There is still no retained native
 PowerShell 5.1 lifecycle evidence for any published version, so treat this path as unverified.
 
 ```powershell
