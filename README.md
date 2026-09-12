@@ -249,6 +249,45 @@ the individual `RELEASE_LIFECYCLE_*_OK` markers identify every required phase.
 This profile is Linux-only and does not replace the separate real interactive
 Windows PowerShell rehearsal.
 
+### v0.0.47 Linux release rehearsal (exact driver commit)
+
+Ran 2026-09-12. This run satisfies section 6's exact-commit driver requirement
+for the Linux platform: it fetched `test-install.sh` from the exact public
+dist-main commit `087a28a12c22a73b6c3b11ef911158e413342cea` (the pushed tip of
+`origin/main`, i.e. the `release: bake v0.0.47` commit) and ran
+`./test-install.sh --docker-tmux --profile release-lifecycle --driver-commit
+087a28a12c22a73b6c3b11ef911158e413342cea`. The pane header records
+`DRIVER_COMMIT=087a28a12c22a73b6c3b11ef911158e413342cea`, with the driver,
+installer, and manifest URLs and SHA-256 values all resolved from that pinned
+commit rather than a moving branch or local checkout. Its retained transcript
+is
+[`evidence/v0.0.47/linux-docker-tmux-release-lifecycle.txt`](evidence/v0.0.47/linux-docker-tmux-release-lifecycle.txt),
+SHA-256 `9701ca1939136588b141572cb32d26741850f2cd3310cd626990e395aabfab7d`
+(54,500 bytes; 1,966 lines). It records the exact raw driver/install/manifest
+URLs and SHA-256 values it verified, plus the pinned immutable v0.0.40
+predecessor's URL and SHA-256
+`8cdf7e0f604c5f21cb2c6ed79aecb5161ebe259835842c28795b47142b6293eb`. Every
+successor stage verifies the published `0.0.47` wheel SHA-256
+`b9c62fb2e8690c3f62b0ad26b3bf84535fd245e8dc2c2a2171bb7ef2b2dd8d14`, matching
+`release-manifest.json`. All thirteen `RELEASE_LIFECYCLE_*_OK` markers and the
+final `DOCKER_TMUX_RELEASE_LIFECYCLE_OK` occur exactly once, covering
+predecessor rollback and migration, app-first zero-vault startup,
+credential-free status and UI, stopped and running updates, custom-port
+refusal, unverified-live-PID refusal, previous-tool-sentinel restoration,
+activation rollback, and final stop. The final line records tmux pane status 0.
+No fake hosted-provider secret appears in the transcript.
+
+This satisfies section 6's exact-commit driver requirement for the Linux
+rehearsal only. It does not by itself promote `0.0.47`: promotion additionally
+requires the separate real interactive Windows PowerShell 5.1 rehearsal, which
+has still never passed for any published version — `0.0.47` included — and
+GitHub Actions is unavailable for this org (billing not enabled), so no
+`distribution-gate` CI run exists on this or any other commit; the required
+gates were instead reproduced locally (`git diff --check`, `bash -n`,
+`shellcheck`, `actionlint`, and this rehearsal itself). `0.0.47` remains a
+prerelease pending both, and this rehearsal deliberately did not attempt the
+Windows rehearsal or clear the release's prerelease flag.
+
 ### v0.0.46 Linux release rehearsal (exact driver commit)
 
 Ran 2026-09-09. This run satisfies section 6's exact-commit driver requirement
