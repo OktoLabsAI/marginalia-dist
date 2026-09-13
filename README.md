@@ -4,42 +4,50 @@ One-shot installer for [Marginalia](https://github.com/OktoLabsAI/marginalia), a
 local-first knowledge graph you can drive from Claude Code (MCP), the CLI, or as
 a Python library.
 
-The current public prerelease is `0.0.47`: source tag
-`ec523eced42e6616de825ee5d8df9e6c61dfaf0c`, wheel
-[`marginalia-0.0.47-py3-none-any.whl`](https://github.com/OktoLabsAI/marginalia-dist/releases/download/v0.0.47/marginalia-0.0.47-py3-none-any.whl),
-SHA-256 `b9c62fb2e8690c3f62b0ad26b3bf84535fd245e8dc2c2a2171bb7ef2b2dd8d14`.
+The current public prerelease is `0.0.48`: source tag
+`1242306425e4245bd4292ad24d6280e310ef8d26`, wheel
+[`marginalia-0.0.48-py3-none-any.whl`](https://github.com/OktoLabsAI/marginalia-dist/releases/download/v0.0.48/marginalia-0.0.48-py3-none-any.whl),
+SHA-256 `884a6721590583eda836dcb127b0e0bb729557db461b27100a3a8e6c99808b24`.
 
-`0.0.47` lowers the default ingest chunk size from 12,000 bytes to 6,000 bytes
-(`ingest.chunk_size_bytes` / `DEFAULT_CHUNK_SIZE_BYTES`). This is evidence-based: three repeats
-per configuration, manually adjudicated against a 103-fact anchored corpus, measured mean
-fact-recall 0.4045 (sd 0.0148) at 6000/0 versus 0.2362 (sd 0.0056) at 12000/0 — a 0.1683 gap,
-11 to 30 times either configuration's own standard deviation, with no overlap across any of the
-six runs.
+`0.0.48` changes two things since `0.0.47`:
 
-**Migration consequence.** Vault config resolves `ingest.chunk_size_bytes` fresh from this
-default on every load — nothing is frozen into a vault's `marginalia.yaml` at creation time. Any
-vault that has never explicitly pinned `ingest.chunk_size_bytes` will, on the next
-add/edit/folder-watch touch of an already-ingested document, find its stored Blocks' chunking
-facet (12000) no longer matches the live config (6000); that orphans the existing Blocks for that
-document and the whole document is re-chunked and re-extracted from scratch on that touch, not
-just the changed hunk. Existing stored Blocks and their byte anchors are untouched until then —
-this is not a retroactive rewrite — and `kg rebuild` always uses the live config regardless of
-what any vault has pinned. To keep the previous chunking behavior, pin the old value explicitly
-before your next touch of an ingested document, e.g. `PATCH /api/v1/config` with
-`{"ingest": {"chunk_size_bytes": 12000}}`, or write `ingest: {chunk_size_bytes: 12000}` directly
-into the vault's `marginalia.yaml`.
+1. **The stale default LLM model is removed — the model default is now empty and
+   discovery-first.** The hardcoded `Qwen3.6-35B-A3B-oQ4-fp16-mtp` default (which assumed a
+   local Qwen server that most machines do not run) is gone: the config defaults, the
+   `marginalia onboard` legacy-local preset, the web UI, and `GET /api/v1/config/defaults`
+   now all ship an empty model default, so a fresh install discovers what is actually
+   reachable instead of assuming one. The model-free acceptance scenarios 83/84/98 now pin
+   `llm.enabled=false`, keeping them deterministic.
 
-GitHub Actions is unavailable for this org (billing not enabled), so CI did not run for this
-release. Every required CI gate — docs generation, the eval/recall-floor gates, the full
-model-free test and acceptance suites, the wheel/dependency-contract/footprint checks, and the
-Neo4j backend gate — was instead reproduced locally against the exact tagged source commit; the
+   **Migration consequence.** Fresh installs get discovery-first model behavior. Existing
+   vaults keep their pinned config: a model already recorded in a vault's config is untouched
+   by this change, so there is no behavior change for any configured vault.
+
+2. **The public installer now offers a conditional first-run onboarding on greenfield
+   installs.** On a fresh interactive terminal with no existing vault or config (greenfield +
+   TTY), the installer asks once, after installing the tool and before starting the app: `Y`
+   (or Enter) runs the terminal `marginalia onboard` flow, `n` keeps the application-first
+   path. The prompt is skipped for piped/CI installs (no TTY), `MARGINALIA_NO_OPEN=1`,
+   `MARGINALIA_VAULT` preseeding, the new `--no-onboard` flag, and every reinstall or
+   upgrade. Six docker-tmux harness scenarios cover the matrix (18/18 pty checks pass); the
+   first-run details are in the macOS/Linux section below.
+
+GitHub Actions is unavailable for the private source repository (billing not enabled), so the
+`marginalia` CI jobs did not run for this release. The model-free test and acceptance suites
+passed green on the release-candidate commit `e5b2316` (3,751 model-free tests; 33/33
+acceptance, including the Neo4j scenario), as did the docs gate (47 generated pages, no
+drift) and the ruff/`uv lock` checks. The eval/recall-floor gates, the clean wheel build, the
+dependency-contract and footprint checks, and every advertised runtime extra were reproduced
+locally against the exact tagged source commit and the exact published wheel above; the
 Windows managed-credentials (DPAPI) gate could not be reproduced outside Windows and is not
-covered by any local substitute in this release.
+covered by any local substitute in this release. The public `marginalia-dist` distribution-gate
+runs on push of this commit.
 
-It stays a prerelease. No published Marginalia version, including `0.0.45` and `0.0.46`, has ever
-passed a real interactive Windows PowerShell 5.1 release lifecycle, and `0.0.47` inherits that gap
-unchanged. Promotion to stable waits on that evidence; the Linux Docker+tmux rehearsal is
-recorded separately below.
+It stays a prerelease. No published Marginalia version, including `0.0.45`, `0.0.46`, and
+`0.0.47`, has ever passed a real interactive Windows PowerShell 5.1 release lifecycle, and
+`0.0.48` inherits that gap unchanged. Promotion to stable waits on that evidence; the Linux
+Docker+tmux rehearsals are recorded separately below, and the `0.0.48` public raw-URL Linux
+rehearsal is pending this release's publication.
 
 ## Install On macOS Or Linux
 
@@ -67,7 +75,7 @@ appears while the Marginalia home is greenfield (no vault config and no
 
 ## Install On Windows
 
-The installer resolves the `0.0.47` prerelease. There is still no retained native
+The installer resolves the `0.0.48` prerelease. There is still no retained native
 PowerShell 5.1 lifecycle evidence for any published version, so treat this path as unverified.
 
 ```powershell

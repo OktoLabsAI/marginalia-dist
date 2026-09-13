@@ -13,7 +13,7 @@ INSTALL_URL="${MARGINALIA_INSTALL_URL:-$DEFAULT_URL}"
 TEST_HOME="${MARGINALIA_TEST_HOME:-}"
 ORIGINAL_HOME="${HOME:-}"
 VAULT="${MARGINALIA_VAULT:-mynotes}"
-EXPECTED_VERSION="${MARGINALIA_EXPECTED_VERSION:-0.0.47}"
+EXPECTED_VERSION="${MARGINALIA_EXPECTED_VERSION:-0.0.48}"
 PROVIDER="${MARGINALIA_LLM_PROVIDER:-}"
 API_BASE="${MARGINALIA_LLM_API_BASE:-}"
 MODEL="${MARGINALIA_LLM_MODEL:-}"
@@ -1848,7 +1848,7 @@ PY
     || die "greenfield non-TTY run did not finish: $out1"
   echo ONBOARD_NON_TTY_GREENFIELD_SKIP_OK
 
-  ( export PATH="$tool_bin:$PATH"; marginalia vault create non-tty-upgrade-vault --use ) \
+  PATH="$tool_bin:$PATH" marginalia vault create non-tty-upgrade-vault --use \
     || die "could not create the upgrade fixture vault"
 
   printf 'run 2: upgrade (prior tool + existing vault), still no controlling terminal\n'
