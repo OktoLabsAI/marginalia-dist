@@ -31,6 +31,9 @@
 #   MARGINALIA_NO_OPEN=1    don't open the verified local UI in a browser
 #   MARGINALIA_NO_MCP=1     don't run `claude mcp add`
 #
+# Flags:
+#   --no-onboard            skip the one-shot greenfield first-run onboarding prompt
+#
 set -euo pipefail
 
 # ── config ────────────────────────────────────────────────────────────────
@@ -106,6 +109,18 @@ validate_preseed_inputs() {
 
 validate_preseed_inputs
 
+# ── flags ───────────────────────────────────────────────────────────────
+# The plain-path first-run prompt (0.0.48) is opt-out only; unknown flags die
+# so a typo can never be mistaken for an opt-out. `bash -s -- --no-onboard`
+# and `bash install.sh --no-onboard` both land here.
+NO_ONBOARD=""
+for arg in "$@"; do
+  case "${arg}" in
+    --no-onboard) NO_ONBOARD="1" ;;
+    *) die "unknown install.sh flag: ${arg} (supported: --no-onboard)" ;;
+  esac
+done
+
 open_application_ui() {
   local url="$1"
   case "$(uname -s 2>/dev/null || true)" in
@@ -127,6 +142,46 @@ open_application_ui() {
 require_expected_wheel_version() {
   [ -n "${1:-}" ] \
     || die "wheel verification requires a manifest version or MARGINALIA_EXPECTED_VERSION"
+}
+
+# Greenfield: no vault config and no defaults config under the Marginalia
+# home. The update-path detector (running daemon or prior tool environment)
+# takes precedence over this check, so an upgrade can never be prompted.
+is_greenfield_home() {
+  ls "${HOME_ROOT}"/vaults/*/marginalia.yaml >/dev/null 2>&1 && return 1
+  [ -f "${HOME_ROOT}/defaults.yaml" ] && return 1
+  return 0
+}
+
+# One-shot greenfield first-run prompt (0.0.48): offered only from the plain
+# (non-preseed, non-update) path, and only when a real terminal is available.
+# Non-TTY, MARGINALIA_NO_OPEN=1, and --no-onboard skip silently; Y/Enter runs
+# `marginalia onboard` (the user names their own vault in-flow), n or EOF
+# falls through to the application-first path with a discoverability hint.
+run_greenfield_first_run_prompt() {
+  [ "${NO_ONBOARD}" = "1" ] && return 0
+  [ "${MARGINALIA_NO_OPEN:-}" = "1" ] && return 0
+  (exec < /dev/tty) 2>/dev/null || return 0
+  is_greenfield_home || return 0
+  local answer=""
+  printf '%s\n' "Marginalia first run: no vault configured." > /dev/tty
+  printf '%s' "Set up your vault and LLM provider now? [Y/n] (default Y) " > /dev/tty
+  if ! IFS= read -r answer < /dev/tty; then
+    info "run 'marginalia onboard' from any shell to do this setup in the terminal"
+    return 0
+  fi
+  case "${answer//[[:space:]]/}" in
+    [nN]|[nN][oO])
+      info "run 'marginalia onboard' from any shell to do this setup in the terminal"
+      return 0
+      ;;
+    *)
+      step "Running 'marginalia onboard' (you name your own vault in-flow)"
+      marginalia onboard < /dev/tty
+      info "onboarding complete — manage your vaults and provider in the Web UI"
+      return 0
+      ;;
+  esac
 }
 
 read_server_pid() {
@@ -761,6 +816,7 @@ if [ -n "${UPGRADE}" ]; then
 elif [ -z "${VAULT}" ]; then
   step "Application-first setup"
   info "no vault preseed requested; create, select, and configure vaults in the Web UI"
+  run_greenfield_first_run_prompt
 else
 
 # ── 4. vault ──────────────────────────────────────────────────────────────

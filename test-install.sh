@@ -63,6 +63,18 @@ Profiles for tmux modes:
   --profile disable-llm  Preseed LLM config and choose disable.
   --profile release-lifecycle  Run the complete Linux release lifecycle in Docker+tmux.
   --profile interactive  Do not auto-drive prompts; print tmux attach command.
+  --profile onboard-prompt-yes  Greenfield + TTY: accept the first-run prompt
+                               (Enter), drive `marginalia onboard` to a
+                               user-named vault with LLM setup skipped.
+  --profile onboard-prompt-no   Greenfield + TTY: answer n; application-first
+                               path plus the `marginalia onboard` hint line.
+  --profile onboard-no-open     Greenfield + TTY + MARGINALIA_NO_OPEN=1: no prompt.
+  --profile onboard-no-flag     Greenfield + TTY + --no-onboard flag: no prompt.
+  --profile onboard-upgrade-tty  Preseeded vault config + TTY: update path never
+                               prompts.
+  --profile onboard-non-tty     Direct mode, no controlling terminal: greenfield
+                               run skips silently, then an upgrade run in the same
+                               home never prompts. Implies MARGINALIA_NO_SERVE=1.
 
 Options:
   --home PATH       Test HOME/evidence directory (default: per-mode/profile path)
@@ -168,9 +180,17 @@ while [ "$#" -gt 0 ]; do
 done
 
 case "$PROFILE" in
-  interactive|skip|auto-lm-studio|lm-studio|ollama|litellm|hosted-openai|hosted-openrouter|hosted-gemini|hosted-anthropic|custom|existing-keep|existing-inspect|existing-reconfigure|disable-llm|release-lifecycle) ;;
+  interactive|skip|auto-lm-studio|lm-studio|ollama|litellm|hosted-openai|hosted-openrouter|hosted-gemini|hosted-anthropic|custom|existing-keep|existing-inspect|existing-reconfigure|disable-llm|release-lifecycle|onboard-prompt-yes|onboard-prompt-no|onboard-no-open|onboard-no-flag|onboard-upgrade-tty|onboard-non-tty) ;;
   *) die "unknown profile: $PROFILE" ;;
 esac
+case "$MODE:$PROFILE" in
+  direct:onboard-prompt-yes|direct:onboard-prompt-no|direct:onboard-no-open|direct:onboard-no-flag|direct:onboard-upgrade-tty)
+    die "--profile $PROFILE needs a real TTY; run it with --tmux or --docker-tmux"
+    ;;
+esac
+if [ "$PROFILE" = "onboard-non-tty" ] && [ "$MODE" != "direct" ]; then
+  die "--profile onboard-non-tty is a direct-mode scenario; it detaches the controlling terminal itself"
+fi
 if [ "$PROFILE" = "custom" ] && { [ -z "$API_BASE" ] || [ -z "$MODEL" ]; }; then
   die "--profile custom requires --api-base and --model"
 fi
@@ -607,17 +627,36 @@ export XDG_CACHE_HOME="$HOME/.cache"
 export XDG_CONFIG_HOME="$HOME/.config"
 export UV_CACHE_DIR="$HOME/.cache/uv"
 export MARGINALIA_NO_MCP=1
-export MARGINALIA_NO_OPEN=1
+# The first-run-prompt profiles run with MARGINALIA_NO_OPEN unset (it
+# suppresses the prompt by contract); their `open` is shimmed below so the
+# verified UI never launches a real browser.
+case "$PROFILE" in
+  onboard-prompt-yes|onboard-prompt-no|onboard-no-flag|onboard-upgrade-tty) ;;
+  *) export MARGINALIA_NO_OPEN=1 ;;
+esac
 # HOME is redirected here but never let a sandbox run persist PATH via
 # uv tool update-shell regardless.
 export MARGINALIA_NO_UPDATE_SHELL=1
-export MARGINALIA_VAULT="$VAULT"
+# The greenfield (plain-path) profiles must not preseed MARGINALIA_VAULT.
+case "$PROFILE" in
+  onboard-prompt-yes|onboard-prompt-no|onboard-no-open|onboard-no-flag) ;;
+  *) export MARGINALIA_VAULT="$VAULT" ;;
+esac
 export MARGINALIA_EXPECTED_VERSION="$EXPECTED_VERSION"
 [ "$NO_SERVE" = "1" ] && export MARGINALIA_NO_SERVE=1
 
 case "$PROFILE" in
-  existing-keep|existing-inspect|existing-reconfigure|disable-llm)
+  existing-keep|existing-inspect|existing-reconfigure|disable-llm|onboard-upgrade-tty)
     seed_existing_config
+    ;;
+esac
+case "$PROFILE" in
+  onboard-prompt-yes|onboard-prompt-no|onboard-no-flag|onboard-upgrade-tty)
+    mkdir -p "$HOME/.sandbox-bin"
+    printf '#!/bin/sh\nexit 0\n' > "$HOME/.sandbox-bin/open"
+    printf '#!/bin/sh\nexit 0\n' > "$HOME/.sandbox-bin/xdg-open"
+    chmod +x "$HOME/.sandbox-bin/open" "$HOME/.sandbox-bin/xdg-open"
+    export PATH="$HOME/.sandbox-bin:$PATH"
     ;;
 esac
 
@@ -634,16 +673,40 @@ elif [ "$PROFILE" = "hosted-openai" ] || [ "$PROFILE" = "hosted-openrouter" ] ||
 fi
 
 printf 'TEST_HOME=%s\nINSTALL_URL=%s\nPROFILE=%s\n' "$HOME" "$INSTALL_URL" "$PROFILE"
-curl -fsSL "$INSTALL_URL" | bash
+case "$PROFILE" in
+  onboard-no-flag) curl -fsSL "$INSTALL_URL" | bash -s -- --no-onboard ;;
+  *) curl -fsSL "$INSTALL_URL" | bash ;;
+esac
 
 export PATH="$HOME/.local/bin:$PATH"
 marginalia --help | sed -n '1,12p'
 CLI_VERSION="$(marginalia --version)"
 [ "$CLI_VERSION" = "marginalia $EXPECTED_VERSION" ]
-CURRENT_VAULT="$(marginalia vault current)"
-[ "$(cd "$CURRENT_VAULT" && pwd)" = "$(cd "$HOME/.marginalia/vaults/$VAULT" && pwd)" ]
-printf '%s\n' "$CURRENT_VAULT"
-if [ "$NO_SERVE" != "1" ]; then
+case "$PROFILE" in
+  onboard-prompt-yes)
+    CURRENT_VAULT="$(marginalia vault current)"
+    [ "$(cd "$CURRENT_VAULT" && pwd)" = \
+      "$(cd "$HOME/.marginalia/vaults/onboarded-vault" && pwd)" ]
+    printf '%s\n' "$CURRENT_VAULT"
+    YAML="$HOME/.marginalia/vaults/onboarded-vault/marginalia.yaml"
+    [ -f "$YAML" ]
+    ! grep -q '^llm:' "$YAML"
+    ;;
+  onboard-prompt-no|onboard-no-open|onboard-no-flag)
+    [ -z "$(find "$HOME/.marginalia/vaults" -name marginalia.yaml -print -quit 2>/dev/null || true)" ]
+    ;;
+  onboard-upgrade-tty)
+    [ -f "$HOME/.marginalia/vaults/$VAULT/marginalia.yaml" ]
+    grep -q 'preexisting-model' "$HOME/.marginalia/vaults/$VAULT/marginalia.yaml"
+    ;;
+  *)
+    CURRENT_VAULT="$(marginalia vault current)"
+    [ "$(cd "$CURRENT_VAULT" && pwd)" = "$(cd "$HOME/.marginalia/vaults/$VAULT" && pwd)" ]
+    printf '%s\n' "$CURRENT_VAULT"
+    ;;
+esac
+# onboard-upgrade-tty intentionally keeps a stopped daemon stopped.
+if [ "$NO_SERVE" != "1" ] && [ "$PROFILE" != "onboard-upgrade-tty" ]; then
   curl -fsS http://127.0.0.1:7777/health
   printf '\n'
   TOOL_PYTHON="$(uv tool dir)/marginalia/bin/python"
@@ -1335,18 +1398,37 @@ PY
 }
 
 export MARGINALIA_NO_MCP=1
-export MARGINALIA_NO_OPEN=1
+# The first-run-prompt profiles run with MARGINALIA_NO_OPEN unset (it
+# suppresses the prompt by contract); their `open` is shimmed below so the
+# verified UI never launches a real browser.
+case "$PROFILE" in
+  onboard-prompt-yes|onboard-prompt-no|onboard-no-flag|onboard-upgrade-tty) ;;
+  *) export MARGINALIA_NO_OPEN=1 ;;
+esac
 # Ephemeral container, but stay consistent - never persist PATH via
 # uv tool update-shell in a sandbox run.
 export MARGINALIA_NO_UPDATE_SHELL=1
-[ "$PROFILE" != "release-lifecycle" ] && export MARGINALIA_VAULT="$VAULT"
+# The greenfield (plain-path) profiles must not preseed MARGINALIA_VAULT.
+case "$PROFILE" in
+  release-lifecycle|onboard-prompt-yes|onboard-prompt-no|onboard-no-open|onboard-no-flag) ;;
+  *) export MARGINALIA_VAULT="$VAULT" ;;
+esac
 export MARGINALIA_EXPECTED_VERSION="$EXPECTED_VERSION"
 [ "$PROFILE" = "release-lifecycle" ] && export MARGINALIA_MANIFEST="$MANIFEST_URL"
 [ "$NO_SERVE" = "1" ] && export MARGINALIA_NO_SERVE=1
 
 case "$PROFILE" in
-  existing-keep|existing-inspect|existing-reconfigure|disable-llm)
+  existing-keep|existing-inspect|existing-reconfigure|disable-llm|onboard-upgrade-tty)
     seed_existing_config
+    ;;
+esac
+case "$PROFILE" in
+  onboard-prompt-yes|onboard-prompt-no|onboard-no-flag|onboard-upgrade-tty)
+    mkdir -p "$HOME/.sandbox-bin"
+    printf '#!/bin/sh\nexit 0\n' > "$HOME/.sandbox-bin/open"
+    printf '#!/bin/sh\nexit 0\n' > "$HOME/.sandbox-bin/xdg-open"
+    chmod +x "$HOME/.sandbox-bin/open" "$HOME/.sandbox-bin/xdg-open"
+    export PATH="$HOME/.sandbox-bin:$PATH"
     ;;
 esac
 
@@ -1370,16 +1452,38 @@ if [ "$PROFILE" = "release-lifecycle" ]; then
   run_predecessor_migration
 fi
 printf 'PROFILE=%s\n' "$PROFILE"
-curl -fsSL "$INSTALL_URL" | bash
+case "$PROFILE" in
+  onboard-no-flag) curl -fsSL "$INSTALL_URL" | bash -s -- --no-onboard ;;
+  *) curl -fsSL "$INSTALL_URL" | bash ;;
+esac
 
 export PATH="$HOME/.local/bin:$PATH"
 marginalia --help | sed -n '1,12p'
 CLI_VERSION="$(marginalia --version)"
 [ "$CLI_VERSION" = "marginalia $EXPECTED_VERSION" ]
-if [ "$PROFILE" != "release-lifecycle" ]; then
-  marginalia vault current
-fi
-if [ "$NO_SERVE" != "1" ]; then
+case "$PROFILE" in
+  release-lifecycle) ;;
+  onboard-prompt-yes)
+    CURRENT_VAULT="$(marginalia vault current)"
+    [ "$(cd "$CURRENT_VAULT" && pwd)" = \
+      "$(cd "$HOME/.marginalia/vaults/onboarded-vault" && pwd)" ]
+    printf '%s\n' "$CURRENT_VAULT"
+    [ -f "$HOME/.marginalia/vaults/onboarded-vault/marginalia.yaml" ]
+    ! grep -q '^llm:' "$HOME/.marginalia/vaults/onboarded-vault/marginalia.yaml"
+    ;;
+  onboard-prompt-no|onboard-no-open|onboard-no-flag)
+    [ -z "$(find "$HOME/.marginalia/vaults" -name marginalia.yaml -print -quit 2>/dev/null || true)" ]
+    ;;
+  onboard-upgrade-tty)
+    [ -f "$HOME/.marginalia/vaults/$VAULT/marginalia.yaml" ]
+    grep -q 'preexisting-model' "$HOME/.marginalia/vaults/$VAULT/marginalia.yaml"
+    ;;
+  *)
+    marginalia vault current
+    ;;
+esac
+# onboard-upgrade-tty intentionally keeps a stopped daemon stopped.
+if [ "$NO_SERVE" != "1" ] && [ "$PROFILE" != "onboard-upgrade-tty" ]; then
   curl -fsS http://127.0.0.1:7777/health
   printf '\n'
   TOOL_PYTHON="$(uv tool dir)/marginalia/bin/python"
@@ -1535,7 +1639,11 @@ drive_profile() {
       wait_for_text "RELEASE_LIFECYCLE_PREDECESSOR_RUNNING_OK" 900
       ;;
     skip)
-      wait_for_text "Provider" 900
+      # 0.0.47+ interactive onboard asks the graph-backend question before the
+      # provider menu; accept the default (grafx) and continue.
+      wait_for_text "Graph backend" 900
+      tmux send-keys -t "$SESSION" C-m
+      wait_for_text "Provider" 120
       tmux send-keys -t "$SESSION" "0" C-m
       ;;
     auto-lm-studio)
@@ -1650,7 +1758,111 @@ drive_profile() {
       wait_for_text "Action" 900
       tmux send-keys -t "$SESSION" "4" C-m
       ;;
+    onboard-prompt-yes)
+      wait_for_text "Set up your vault and LLM provider now?" 900
+      tmux send-keys -t "$SESSION" C-m
+      wait_for_text "Graph backend" 120
+      tmux send-keys -t "$SESSION" C-m
+      wait_for_text "Vault name" 120
+      tmux send-keys -t "$SESSION" "onboarded-vault" C-m
+      wait_for_text "Create vault at" 120
+      tmux send-keys -t "$SESSION" C-m
+      wait_for_text "Provider" 120
+      tmux send-keys -t "$SESSION" "0" C-m
+      ;;
+    onboard-prompt-no)
+      wait_for_text "Set up your vault and LLM provider now?" 900
+      tmux send-keys -t "$SESSION" "n" C-m
+      ;;
   esac
+}
+
+# Greenfield first-run prompt matrix row b (+ the upgrade row without a TTY):
+# run the raw installer with NO controlling terminal, exactly like CI. The
+# python setsid detaches the session; the fake `open` keeps the app-first
+# browser launch side-effect-free. NO_SERVE is forced: the prompt gate lands
+# before the serve step, and this scenario must not touch host ports.
+run_onboard_non_tty_scenario() {
+  local tool_bin="$TEST_HOME/.local/bin"
+  local sandbox_bin="$TEST_HOME/.sandbox-bin"
+  local out1="$TEST_HOME/evidence-non-tty-greenfield.txt"
+  local out2="$TEST_HOME/evidence-non-tty-upgrade.txt"
+  local runner_py="$TEST_HOME/run-detached-installer.py"
+
+  command -v python3 >/dev/null 2>&1 || die "python3 is required for --profile onboard-non-tty"
+
+  mkdir -p "$sandbox_bin"
+  printf '#!/bin/sh\nexit 0\n' > "$sandbox_bin/open"
+  printf '#!/bin/sh\nexit 0\n' > "$sandbox_bin/xdg-open"
+  chmod +x "$sandbox_bin/open" "$sandbox_bin/xdg-open"
+
+  cat > "$runner_py" <<'PY'
+import os
+import subprocess
+import sys
+
+# A new session with no controlling terminal: /dev/tty is unavailable, which
+# is exactly what a CI or headless piped install sees.
+os.setsid()
+url = sys.argv[1]
+proc = subprocess.run(
+    ["bash", "-c", "curl -fsSL '%s' | bash" % url],
+    stdin=subprocess.DEVNULL,
+    capture_output=True,
+    text=True,
+    env=dict(os.environ),
+)
+sys.stdout.write(proc.stdout)
+sys.stderr.write(proc.stderr)
+sys.exit(proc.returncode)
+PY
+
+  export HOME="$TEST_HOME"
+  export XDG_DATA_HOME="$TEST_HOME/.local/share"
+  export XDG_CACHE_HOME="$TEST_HOME/.cache"
+  export XDG_CONFIG_HOME="$TEST_HOME/.config"
+  export UV_CACHE_DIR="$TEST_HOME/.cache/uv"
+  export MARGINALIA_NO_MCP=1
+  export MARGINALIA_NO_UPDATE_SHELL=1
+  export MARGINALIA_NO_SERVE=1
+  export MARGINALIA_EXPECTED_VERSION="$EXPECTED_VERSION"
+  # Never leak preseed settings from the caller's environment into the
+  # greenfield plain-path run.
+  unset MARGINALIA_VAULT MARGINALIA_NO_OPEN MARGINALIA_ONBOARD_NONINTERACTIVE \
+    MARGINALIA_PACKS MARGINALIA_LLM_PROVIDER MARGINALIA_LLM_API_BASE \
+    MARGINALIA_LLM_MODEL MARGINALIA_LLM_API_KEY_ENV MARGINALIA_LLM_SKIP_DISCOVERY \
+    MARGINALIA_LLM_ALLOW_REMOTE MARGINALIA_ALLOW_REMOTE_LLM
+
+  printf 'ONBOARD_NON_TTY_SCENARIO\n'
+  printf 'run 1: greenfield, no controlling terminal (CI-like)\n'
+  PATH="$sandbox_bin:$PATH" python3 "$runner_py" "$INSTALL_URL" > "$out1" 2>&1 \
+    || die "greenfield non-TTY run failed: $out1"
+  cat "$out1"
+  grep -Fq "Set up your vault and LLM provider now?" "$out1" \
+    && die "greenfield non-TTY run printed the first-run prompt: $out1"
+  grep -Fq "Marginalia first run: no vault configured." "$out1" \
+    && die "greenfield non-TTY run printed the first-run prompt: $out1"
+  grep -Fq "no vault preseed requested; create, select, and configure vaults in the Web UI" "$out1" \
+    || die "greenfield non-TTY run did not take the application-first path: $out1"
+  grep -Fq "Marginalia ${EXPECTED_VERSION} installed; daemon was not started." "$out1" \
+    || die "greenfield non-TTY run did not finish: $out1"
+  echo ONBOARD_NON_TTY_GREENFIELD_SKIP_OK
+
+  ( export PATH="$tool_bin:$PATH"; marginalia vault create non-tty-upgrade-vault --use ) \
+    || die "could not create the upgrade fixture vault"
+
+  printf 'run 2: upgrade (prior tool + existing vault), still no controlling terminal\n'
+  PATH="$tool_bin:$sandbox_bin:$PATH" python3 "$runner_py" "$INSTALL_URL" > "$out2" 2>&1 \
+    || die "upgrade non-TTY run failed: $out2"
+  cat "$out2"
+  grep -Fq "Set up your vault and LLM provider now?" "$out2" \
+    && die "upgrade non-TTY run printed the first-run prompt: $out2"
+  grep -Fq "Marginalia first run: no vault configured." "$out2" \
+    && die "upgrade non-TTY run printed the first-run prompt: $out2"
+  grep -Fq "Update mode" "$out2" \
+    || die "upgrade non-TTY run did not take the update path: $out2"
+  echo ONBOARD_NON_TTY_UPGRADE_NO_PROMPT_OK
+  echo ONBOARD_NON_TTY_OK
 }
 
 run_direct() {
@@ -1659,6 +1871,11 @@ run_direct() {
   local xdg_config="$TEST_HOME/.config"
   local uv_cache="$TEST_HOME/.cache/uv"
   local tool_bin="$TEST_HOME/.local/bin"
+
+  if [ "$PROFILE" = "onboard-non-tty" ]; then
+    run_onboard_non_tty_scenario
+    return
+  fi
 
   printf 'Marginalia public installer test\n'
   printf '  installer: %s\n' "$INSTALL_URL"
@@ -1732,12 +1949,22 @@ run_host_tmux() {
 }
 
 run_docker_tmux() {
-  local runner
+  local runner install_url="$INSTALL_URL" install_mount="" install_file=""
   runner="$(write_docker_runner)"
+  # A local file:// installer cannot be read inside the container; mount it
+  # read-only and hand the container the in-container path.
+  case "$install_url" in
+    file://*)
+      install_file="${install_url#file://}"
+      [ -f "$install_file" ] || die "local installer file not found: $install_file"
+      install_mount="-v $install_file:/local-install.sh:ro"
+      install_url="file:///local-install.sh"
+      ;;
+  esac
   remove_owned_tmux_session
   remove_owned_container
   tmux new-session -d -s "$SESSION" -x 200 -y 90 \
-    "docker run --rm -it --name '$CONTAINER' --label '$DOCKER_OWNER_LABEL=$SANDBOX_MARKER_VALUE' -e INSTALL_URL='$INSTALL_URL' -e VAULT='$VAULT' -e PROFILE='$PROFILE' -e NO_SERVE='$NO_SERVE' -e MODEL='$MODEL' -e EXPECTED_VERSION='$EXPECTED_VERSION' -e DRIVER_COMMIT='$DRIVER_COMMIT' -e DRIVER_URL='$DRIVER_URL' -e DRIVER_SHA256='$DRIVER_SHA256' -e INSTALL_SHA256='$INSTALL_SHA256' -e MANIFEST_URL='$MANIFEST_URL' -e MANIFEST_SHA256='$MANIFEST_SHA256' -v '$runner:/runner.sh:ro' ubuntu:24.04 bash /runner.sh"
+    "docker run --rm -it --name '$CONTAINER' --label '$DOCKER_OWNER_LABEL=$SANDBOX_MARKER_VALUE' $install_mount -e INSTALL_URL='$install_url' -e VAULT='$VAULT' -e PROFILE='$PROFILE' -e NO_SERVE='$NO_SERVE' -e MODEL='$MODEL' -e EXPECTED_VERSION='$EXPECTED_VERSION' -e DRIVER_COMMIT='$DRIVER_COMMIT' -e DRIVER_URL='$DRIVER_URL' -e DRIVER_SHA256='$DRIVER_SHA256' -e INSTALL_SHA256='$INSTALL_SHA256' -e MANIFEST_URL='$MANIFEST_URL' -e MANIFEST_SHA256='$MANIFEST_SHA256' -v '$runner:/runner.sh:ro' ubuntu:24.04 bash /runner.sh"
   tmux set-option -t "$SESSION" remain-on-exit on
   tmux set-option -t "$SESSION" "$RESOURCE_OWNER_KEY" "$SANDBOX_MARKER_VALUE"
   drive_profile

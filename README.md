@@ -47,6 +47,24 @@ recorded separately below.
 curl -fsSL https://raw.githubusercontent.com/OktoLabsAI/marginalia-dist/main/install.sh | bash
 ```
 
+On a fresh interactive terminal with no existing Marginalia vault or config
+(greenfield), the installer asks once, after installing the tool and before
+starting the app:
+
+```text
+Marginalia first run: no vault configured.
+Set up your vault and LLM provider now? [Y/n] (default Y)
+```
+
+`Y` or Enter runs the terminal `marginalia onboard` flow (you name your own
+vault in-flow; the installer never creates one). `n` or EOF keeps the
+application-first path and prints a hint that `marginalia onboard` is
+available from any shell. The prompt is skipped silently for piped/CI
+installs (no TTY), `MARGINALIA_NO_OPEN=1`, the `--no-onboard` flag,
+`MARGINALIA_VAULT` preseeding, and every reinstall or upgrade — it only
+appears while the Marginalia home is greenfield (no vault config and no
+`~/.marginalia/defaults.yaml`), so upgrades never prompt.
+
 ## Install On Windows
 
 The installer resolves the `0.0.47` prerelease. There is still no retained native
@@ -96,6 +114,10 @@ Everything is overridable by environment variable — useful under `curl … | b
 | `MARGINALIA_NO_SERVE` | — | `1` = install + configure only |
 | `MARGINALIA_NO_OPEN` | — | `1` = start the verified daemon without opening a browser |
 | `MARGINALIA_NO_MCP` | — | `1` = don't run `claude mcp add` |
+
+`install.sh` also accepts one flag: `--no-onboard` force-skips the greenfield
+first-run prompt (`curl … | bash -s -- --no-onboard`); any other flag is
+rejected.
 
 The normal app-first installation needs no provider or vault environment variables.
 For compatibility automation that intentionally preseeds a vault, set
@@ -200,12 +222,20 @@ add `--cleanup` only for throwaway smoke runs.
 ./test-install.sh --docker-tmux --profile existing-inspect
 ./test-install.sh --docker-tmux --profile existing-reconfigure
 ./test-install.sh --docker-tmux --profile disable-llm
+./test-install.sh --docker-tmux --profile onboard-prompt-yes
+./test-install.sh --docker-tmux --profile onboard-prompt-no
+./test-install.sh --docker-tmux --profile onboard-no-open
+./test-install.sh --docker-tmux --profile onboard-no-flag
+./test-install.sh --docker-tmux --profile onboard-upgrade-tty
 ./test-install.sh --docker-tmux --profile custom --api-base http://127.0.0.1:1234/v1 --model docker-custom-human-model
 
 # macOS/Linux host with isolated HOME, prompts driven through tmux.
 ./test-install.sh --tmux --profile skip
 ./test-install.sh --tmux --profile existing-inspect
 ./test-install.sh --tmux --profile custom --api-base http://127.0.0.1:8123/v1 --model macos-custom-human-model
+
+# Greenfield first-run matrix scenario without a TTY (direct mode only).
+./test-install.sh --profile onboard-non-tty
 ```
 
 The scripted profiles cover skip, auto-detect, LM Studio, Ollama, LiteLLM
