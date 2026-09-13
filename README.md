@@ -46,8 +46,7 @@ runs on push of this commit.
 It stays a prerelease. No published Marginalia version, including `0.0.45`, `0.0.46`, and
 `0.0.47`, has ever passed a real interactive Windows PowerShell 5.1 release lifecycle, and
 `0.0.48` inherits that gap unchanged. Promotion to stable waits on that evidence; the Linux
-Docker+tmux rehearsals are recorded separately below, and the `0.0.48` public raw-URL Linux
-rehearsal is pending this release's publication.
+Docker+tmux rehearsals are recorded separately below.
 
 ## Install On macOS Or Linux
 
@@ -286,6 +285,79 @@ then stops cleanly. The retained pane must contain
 the individual `RELEASE_LIFECYCLE_*_OK` markers identify every required phase.
 This profile is Linux-only and does not replace the separate real interactive
 Windows PowerShell rehearsal.
+
+### v0.0.48 Linux release rehearsal (exact driver commit)
+
+Ran 2026-09-13. This run satisfies section 6's exact-commit driver requirement
+for the Linux platform: it fetched `test-install.sh` from the exact public
+dist-main commit `6de65ad19df4dfd4d3d813e707010f6f6b3c5d84` (the pushed tip of
+`origin/main`, i.e. the `release: 0.0.48 manifest + README` commit) and ran
+`./test-install.sh --docker-tmux --profile release-lifecycle --driver-commit
+6de65ad19df4dfd4d3d813e707010f6f6b3c5d84`. The pane header records
+`DRIVER_COMMIT=6de65ad19df4dfd4d3d813e707010f6f6b3c5d84`, with the driver,
+installer, and manifest URLs and SHA-256 values all resolved from that pinned
+commit rather than a moving branch or local checkout. Its retained transcript
+is
+[`evidence/v0.0.48/linux-docker-tmux-release-lifecycle.txt`](evidence/v0.0.48/linux-docker-tmux-release-lifecycle.txt),
+SHA-256 `6914ea31d4c13647f3b17d518fc7abcad25497eb7c5c722656b7f65b456f2a81`
+(54,711 bytes; 1,978 lines). It records the exact raw driver/install/manifest
+URLs and SHA-256 values it verified, plus the pinned immutable v0.0.40
+predecessor's URL and SHA-256
+`8cdf7e0f604c5f21cb2c6ed79aecb5161ebe259835842c28795b47142b6293eb`. Every
+successor stage verifies the published `0.0.48` wheel SHA-256
+`884a6721590583eda836dcb127b0e0bb729557db461b27100a3a8e6c99808b24`, matching
+`release-manifest.json`. All thirteen `RELEASE_LIFECYCLE_*_OK` markers and the
+final `DOCKER_TMUX_RELEASE_LIFECYCLE_OK` occur exactly once, covering
+predecessor rollback and migration, app-first zero-vault startup,
+credential-free status and UI, stopped and running updates, custom-port
+refusal, unverified-live-PID refusal, previous-tool-sentinel restoration,
+activation rollback, and final stop. The final line records tmux pane status 0.
+No fake hosted-provider secret appears in the transcript.
+
+New for 0.0.48, the one-shot greenfield first-run prompt was exercised in the
+same rehearsal: a second fresh `ubuntu:24.04` container in a real tmux TTY ran
+the public raw-URL installer (`curl -fsSL
+https://raw.githubusercontent.com/OktoLabsAI/marginalia-dist/main/install.sh
+| bash`, driven by `./test-install.sh --docker-tmux --profile
+onboard-prompt-yes`) with `main` still at that same commit `6de65ad` (the raw
+`main` installer, manifest, and driver byte-match the pinned-commit SHAs
+recorded in the lifecycle pane header). On the greenfield + TTY install the
+installer printed, after installing the tool and before starting the app:
+
+```text
+Marginalia first run: no vault configured.
+Set up your vault and LLM provider now? [Y/n] (default Y)
+```
+
+Answering `Y` (Enter) ran `marginalia onboard`: the default graph backend
+(`grafx`) was accepted, the in-flow user-named vault `onboarded-vault` was
+created and confirmed at `/root/.marginalia/vaults/onboarded-vault`, and
+provider choice `0` skipped LLM setup (no LLM in the container), so the
+created `marginalia.yaml` carries no `llm:` block. The daemon then started
+(UI/REST `:7777` + MCP `:8201`) with `server: ready (http://127.0.0.1:7777,
+version 0.0.48)`, the plain loopback UI was reachable (`/health` returned
+`{"status":"ok"}` and the installer opened the verified app at
+`http://127.0.0.1:7777/`), the installed wheel SHA-256 matched
+`release-manifest.json`, and the run tore down with `marginalia stop`, ending
+in `DOCKER_TMUX_HUMAN_INSTALL_OK` with tmux pane status 0. Its retained
+transcript is
+[`evidence/v0.0.48/linux-docker-tmux-greenfield-first-run.txt`](evidence/v0.0.48/linux-docker-tmux-greenfield-first-run.txt),
+SHA-256 `11ad67dbe4d81c7743051ad7aa7ce1e8f052bffaed50acc4a657f911eba6e052`
+(9,604 bytes; 334 lines).
+
+Both containers ran on the host's default bridge network with no published
+ports and no `--network host`, so each container's `:7777`/`:8201` was
+isolated in its own network namespace and no host daemon or host port was
+touched.
+
+This satisfies section 6's exact-commit driver requirement for the Linux
+rehearsal only. It does not by itself promote `0.0.48`: promotion additionally
+requires the separate real interactive Windows PowerShell 5.1 rehearsal, which
+has still never passed for any published version — `0.0.48` included. The
+public `distribution-gate` runs on push of this recording commit. `0.0.48`
+remains a prerelease pending that Windows evidence, and this rehearsal
+deliberately did not attempt the Windows rehearsal or clear the release's
+prerelease flag.
 
 ### v0.0.47 Linux release rehearsal (exact driver commit)
 
