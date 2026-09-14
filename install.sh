@@ -39,9 +39,9 @@ set -euo pipefail
 # ── config ────────────────────────────────────────────────────────────────
 # The public distribution copy of this script bakes a release-wheel URL here so
 # `curl … | bash` needs no env. Empty in the source repo (which clones instead).
-DEFAULT_WHEEL_URL="${MARGINALIA_DEFAULT_WHEEL_URL:-https://github.com/OktoLabsAI/marginalia-dist/releases/download/v0.0.48/marginalia-0.0.48-py3-none-any.whl}"
+DEFAULT_WHEEL_URL="${MARGINALIA_DEFAULT_WHEEL_URL:-https://github.com/OktoLabsAI/marginalia-dist/releases/download/v0.0.49/marginalia-0.0.49-py3-none-any.whl}"
 DEFAULT_MANIFEST_URL="${MARGINALIA_DEFAULT_MANIFEST_URL:-https://raw.githubusercontent.com/OktoLabsAI/marginalia-dist/main/release-manifest.json}"
-EXPECTED_VERSION="${MARGINALIA_EXPECTED_VERSION:-0.0.48}"
+EXPECTED_VERSION="${MARGINALIA_EXPECTED_VERSION:-0.0.49}"
 EXTRAS="serve,litellm"
 PY_VERSION="3.12"
 REPO="${MARGINALIA_REPO:-git@github.com:OktoLabsAI/marginalia.git}"

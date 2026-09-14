@@ -4,49 +4,60 @@ One-shot installer for [Marginalia](https://github.com/OktoLabsAI/marginalia), a
 local-first knowledge graph you can drive from Claude Code (MCP), the CLI, or as
 a Python library.
 
-The current public prerelease is `0.0.48`: source tag
-`1242306425e4245bd4292ad24d6280e310ef8d26`, wheel
-[`marginalia-0.0.48-py3-none-any.whl`](https://github.com/OktoLabsAI/marginalia-dist/releases/download/v0.0.48/marginalia-0.0.48-py3-none-any.whl),
-SHA-256 `884a6721590583eda836dcb127b0e0bb729557db461b27100a3a8e6c99808b24`.
+The current public prerelease is `0.0.49`: source tag
+`85f2b28bd1c23c1cdc5fdf6389d7ba96862bda6b`, wheel
+[`marginalia-0.0.49-py3-none-any.whl`](https://github.com/OktoLabsAI/marginalia-dist/releases/download/v0.0.49/marginalia-0.0.49-py3-none-any.whl),
+SHA-256 `8274abea746e9ec6d1b8450e5d416ea626ec8e325effbe1f240929ad9ec9d4c3`.
 
-`0.0.48` changes two things since `0.0.47`:
+`0.0.49` fixes the onboarding base-URL handling for OpenAI-compatible endpoints, in one
+place and for every surface that writes it:
 
-1. **The stale default LLM model is removed — the model default is now empty and
-   discovery-first.** The hardcoded `Qwen3.6-35B-A3B-oQ4-fp16-mtp` default (which assumed a
-   local Qwen server that most machines do not run) is gone: the config defaults, the
-   `marginalia onboard` legacy-local preset, the web UI, and `GET /api/v1/config/defaults`
-   now all ship an empty model default, so a fresh install discovers what is actually
-   reachable instead of assuming one. The model-free acceptance scenarios 83/84/98 now pin
-   `llm.enabled=false`, keeping them deterministic.
+1. **The base URL is canonicalized in a single resolver, regardless of the form typed.**
+   Discovery used to probe `{base}/models` (treating user input as the server root) while
+   completions POSTed `{base}/chat/completions` (treating input as already versioned), so a
+   server root like `http://host:port` passed discovery but 404'd on the completion step,
+   while a `/v1`-form base failed discovery on servers that only serve `/v1` (oMLX). Every
+   input form (root, `root/`, `/v1`, `/v1/`, subpath variants) now derives the identical
+   pair — discovery at `{root}/v1/models`, completions at `{root}/v1` — and the base
+   persisted to `marginalia.yaml` is always the canonical `{root}/v1`, so the saved config
+   never depends on which form was entered. A query string on the base (Azure-style
+   `?api-version=`) is preserved on every derived URL; non-OpenAI-contract drivers
+   (Anthropic, Gemini, Azure, Ollama, …) are untouched.
 
-   **Migration consequence.** Fresh installs get discovery-first model behavior. Existing
-   vaults keep their pinned config: a model already recorded in a vault's config is untouched
-   by this change, so there is no behavior change for any configured vault.
+2. **Onboarding runs a real completion before it saves anything.** After discovery lists
+   models, a minimal completion runs through the exact canonical endpoint every real
+   ask/ingest call uses. On failure the run aborts with the exact attempted URL and
+   nothing is saved — no LLM config block, no env secret — instead of persisting a base the
+   runtime could not actually use.
 
-2. **The public installer now offers a conditional first-run onboarding on greenfield
-   installs.** On a fresh interactive terminal with no existing vault or config (greenfield +
-   TTY), the installer asks once, after installing the tool and before starting the app: `Y`
-   (or Enter) runs the terminal `marginalia onboard` flow, `n` keeps the application-first
-   path. The prompt is skipped for piped/CI installs (no TTY), `MARGINALIA_NO_OPEN=1`,
-   `MARGINALIA_VAULT` preseeding, the new `--no-onboard` flag, and every reinstall or
-   upgrade. Six docker-tmux harness scenarios cover the matrix (18/18 pty checks pass); the
-   first-run details are in the macOS/Linux section below.
+3. **A non-interactive run without `--model` never silently defaults to the first
+   discovered model.** On a multi-model server `models[0]` can be a non-chat model; the run
+   now lists what it found and demands an explicit `--model` (a preset's own declared
+   default is still honored when it is among the discovered models).
+
+   **Migration consequence.** Existing vaults keep their pinned config; for OpenAI-compatible
+   drivers the stored `api_base` is now canonicalized to the runtime's own shape on
+   load/write, so a previously saved root-form base now resolves to the same `/v1` endpoint
+   a fresh install would get — previously broken root-form configs start working, and
+   correctly saved `/v1` configs are unchanged.
 
 GitHub Actions is unavailable for the private source repository (billing not enabled), so the
-`marginalia` CI jobs did not run for this release. The model-free test and acceptance suites
-passed green on the release-candidate commit `e5b2316` (3,751 model-free tests; 33/33
-acceptance, including the Neo4j scenario), as did the docs gate (47 generated pages, no
-drift) and the ruff/`uv lock` checks. The eval/recall-floor gates, the clean wheel build, the
-dependency-contract and footprint checks, and every advertised runtime extra were reproduced
-locally against the exact tagged source commit and the exact published wheel above; the
-Windows managed-credentials (DPAPI) gate could not be reproduced outside Windows and is not
-covered by any local substitute in this release. The public `marginalia-dist` distribution-gate
-runs on push of this commit.
+`marginalia` CI jobs did not run for this release. The model-free test suite passed green on
+the release-candidate commit `2649f2a` (3,762 tests, per that commit's recorded verification). The
+eval/recall-floor gates were reproduced locally at the exact tagged source commit (provenance
+gate 32/32 gold targets and 20/20 distractors; recall floor against the committed baseline:
+hard-recall@10 0.4688 (15/32), extraction-completeness 0.5625 (18/32), MRR@10 0.4348,
+precision@10 0.2, no regressions), and the clean wheel build, the dependency-contract
+(17/17) and footprint (1/1) checks, and every advertised runtime extra (embeddings, ladybug,
+jsonld, mcp, serve, litellm, bedrock, sentence-transformers) were verified against the exact
+published wheel above in clean Python 3.12 environments; the Windows managed-credentials (DPAPI)
+gate could not be reproduced outside Windows and is not covered by any local substitute in
+this release. The public `marginalia-dist` distribution-gate runs on push of this commit.
 
-It stays a prerelease. No published Marginalia version, including `0.0.45`, `0.0.46`, and
-`0.0.47`, has ever passed a real interactive Windows PowerShell 5.1 release lifecycle, and
-`0.0.48` inherits that gap unchanged. Promotion to stable waits on that evidence; the Linux
-Docker+tmux rehearsals are recorded separately below.
+It stays a prerelease. No published Marginalia version, including `0.0.45`, `0.0.46`,
+`0.0.47`, and `0.0.48`, has ever passed a real interactive Windows PowerShell 5.1 release
+lifecycle, and `0.0.49` inherits that gap unchanged. Promotion to stable waits on that
+evidence; the Linux Docker+tmux rehearsal is recorded separately below.
 
 ## Install On macOS Or Linux
 
@@ -74,7 +85,7 @@ appears while the Marginalia home is greenfield (no vault config and no
 
 ## Install On Windows
 
-The installer resolves the `0.0.48` prerelease. There is still no retained native
+The installer resolves the `0.0.49` prerelease. There is still no retained native
 PowerShell 5.1 lifecycle evidence for any published version, so treat this path as unverified.
 
 ```powershell
