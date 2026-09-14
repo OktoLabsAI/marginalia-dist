@@ -877,7 +877,6 @@ elif [ "$PROFILE" = "hosted-openai" ] || [ "$PROFILE" = "hosted-openrouter" ] ||
   export MARGINALIA_LLM_MODEL="$MODEL"
   export MARGINALIA_LLM_API_KEY_ENV=MARGINALIA_HOSTED_TEST_KEY
   export MARGINALIA_HOSTED_TEST_KEY=sk-fake-public-installer-test
-fi
 elif [ "$PROFILE" = "custom-rootform" ]; then
   start_mock_custom_openai
 fi
@@ -1843,7 +1842,6 @@ elif [ "$PROFILE" = "hosted-openai" ] || [ "$PROFILE" = "hosted-openrouter" ] ||
   export MARGINALIA_LLM_MODEL="$MODEL"
   export MARGINALIA_LLM_API_KEY_ENV=MARGINALIA_HOSTED_TEST_KEY
   export MARGINALIA_HOSTED_TEST_KEY=sk-fake-public-installer-test
-fi
 elif [ "$PROFILE" = "custom-rootform" ]; then
   start_mock_custom_openai
 fi
