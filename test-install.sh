@@ -237,6 +237,7 @@ check_custom_rootform_evidence() {
     && die "custom-rootform probed a root-level /models (pre-0.0.49 bug): $EVIDENCE"
   grep -Fq "MOCK-REQ POST /chat/completions" "$EVIDENCE" \
     && die "custom-rootform probed a root-level /chat/completions (pre-0.0.49 bug): $EVIDENCE"
+  return 0
 }
 
 init_paths() {
