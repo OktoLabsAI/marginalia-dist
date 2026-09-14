@@ -2146,9 +2146,13 @@ drive_profile() {
       tmux send-keys -t "$SESSION" "$MODEL" C-m
       ;;
     custom-rootform)
+      # 0.0.47+ interactive onboard asks the graph-backend question before the
+      # provider menu on a fresh preseed vault; accept the default (grafx).
+      wait_for_text "Graph backend" 900
+      tmux send-keys -t "$SESSION" C-m
       # The base is typed in ROOT form (no /v1): the onboarding resolver must
       # derive {root}/v1 for both discovery and the pre-save verify.
-      wait_for_text "Provider" 900
+      wait_for_text "Provider" 120
       tmux send-keys -t "$SESSION" "9" C-m
       wait_for_text "Base URL" 120
       tmux send-keys -t "$SESSION" "http://127.0.0.1:18123" C-m
