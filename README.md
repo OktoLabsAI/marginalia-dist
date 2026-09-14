@@ -297,6 +297,96 @@ the individual `RELEASE_LIFECYCLE_*_OK` markers identify every required phase.
 This profile is Linux-only and does not replace the separate real interactive
 Windows PowerShell rehearsal.
 
+### v0.0.49 Linux release rehearsal (exact driver commit)
+
+Ran 2026-09-14. The 0.0.49 harness adaptation (provider menu gained the
+`pi_cli`/`codex_cli` entries, the 0.0.47+ onboarding asks for the graph
+backend before the provider, and the 0.0.49 onboarding verifies a real
+completion before saving) required four fix commits after the 0.0.49 bake
+(`de929b4` mock-launch chain, `266631d` backend prompt, `13355f9` provider
+11, `f1ea4e3` evidence-checker return status). All three rehearsals below
+therefore drove from the final dist-main commit
+`f1ea4e3591b2d65db3b656933e30281249d867b5`, and `v0.0.49` in this repo points
+at that exact commit.
+
+First, the release lifecycle: `./test-install.sh --docker-tmux --profile
+release-lifecycle --driver-commit f1ea4e3591b2d65db3b656933e30281249d867b5`
+fetched the driver from the exact public raw URL of that commit. The pane
+header records `DRIVER_COMMIT=f1ea4e3591b2d65db3b656933e30281249d867b5` with
+driver, installer, and manifest URLs and SHA-256 values resolved from that
+pinned commit. Every successor stage verifies the published `0.0.49` wheel
+SHA-256 `8274abea746e9ec6d1b8450e5d416ea626ec8e325effbe1f240929ad9ec9d4c3`,
+matching `release-manifest.json`. All thirteen `RELEASE_LIFECYCLE_*_OK`
+markers and the final `DOCKER_TMUX_RELEASE_LIFECYCLE_OK` occur exactly once,
+and the final line records tmux pane status 0. Retained transcript:
+[`evidence/v0.0.49/linux-docker-tmux-release-lifecycle.txt`](evidence/v0.0.49/linux-docker-tmux-release-lifecycle.txt),
+SHA-256 `5f444a7d4c261cf78fdd782b7b8b1902792d89714d7623064e2fb7ec52841e07`
+(54,708 bytes; 1,978 lines).
+
+Second, the greenfield first-run prompt: a fresh `ubuntu:24.04` container in
+a real tmux TTY installed from the pinned raw URL
+`https://raw.githubusercontent.com/OktoLabsAI/marginalia-dist/f1ea4e3591b2d65db3b656933e30281249d867b5/install.sh`
+(`--profile onboard-prompt-yes`). On the greenfield + TTY install the
+installer printed, after installing the tool and before starting the app:
+
+```text
+Marginalia first run: no vault configured.
+Set up your vault and LLM provider now? [Y/n] (default Y)
+```
+
+Answering `Y` (Enter) ran `marginalia onboard`: the default graph backend
+(`grafx`) was accepted, the in-flow user-named vault `onboarded-vault` was
+created, and provider choice `0` skipped LLM setup, so the created
+`marginalia.yaml` carries no `llm:` block. The daemon then started
+(`server: ready (http://127.0.0.1:7777, version 0.0.49)`), the run tore down
+with `marginalia stop`, and it ended in `DOCKER_TMUX_HUMAN_INSTALL_OK` with
+tmux pane status 0. Retained transcript:
+[`evidence/v0.0.49/linux-docker-tmux-greenfield-first-run.txt`](evidence/v0.0.49/linux-docker-tmux-greenfield-first-run.txt),
+SHA-256 `1f0e72081eaa80b570bce545e6179f07c6be6ad7728c0210678ebef19f438189`
+(9,604 bytes; 334 lines).
+
+Third, new for 0.0.49, the `custom-rootform` profile exercised the
+verify-before-save fix end to end against a hermetic `/v1`-only mock OpenAI
+server inside the container (the documented 0.0.49 choice instead of
+host-networking a LAN endpoint — no LAN address appears in any retained
+evidence). The driven install (`--profile custom-rootform`) entered the
+base URL `http://127.0.0.1:18123` (no trailing `/v1`, root form) and model
+`fake-chat-model` (the second of two discovered models — not a
+`models[0]` default). The mock log records the canonical
+`MOCK-REQ GET /v1/models` discovery probe and a pre-save
+`MOCK-REQ POST /v1/chat/completions` verify; the onboarding summary then
+shows the canonicalized `base URL: http://127.0.0.1:18123/v1`, and the
+runner asserted the saved `marginalia.yaml` contains
+`api_base: http://127.0.0.1:18123/v1` and `fake-chat-model`. Two post-steps
+ran in the same container: (f) a non-interactive dead-endpoint run failed
+with `verify failed — nothing was saved:` showing the exact attempted URL
+`POST http://127.0.0.1:18124/v1/chat/completions`, and the runner asserted
+the vault `marginalia.yaml` contains no `llm:` block
+(`CUSTOM_ROOTFORM_DEAD_ENDPOINT_OK`); (g) a non-interactive run without
+`--model` refused to pick `models[0]`, printing the exact error listing the
+discovered models and saving nothing
+(`CUSTOM_ROOTFORM_NO_SILENT_MODEL_OK`). No root-level `MOCK-REQ GET /models`
+or `MOCK-REQ POST /chat/completions` probe (the pre-0.0.49 bug) appears
+anywhere in the transcript. It ended in `DOCKER_TMUX_HUMAN_INSTALL_OK` with
+tmux pane status 0. Retained transcript:
+[`evidence/v0.0.49/linux-docker-tmux-custom-rootform.txt`](evidence/v0.0.49/linux-docker-tmux-custom-rootform.txt),
+SHA-256 `e8133c6411ac5756851855362512cefe7bf951df2bca463586dd93968eab53bd`
+(10,820 bytes; 360 lines).
+
+All three containers ran on the host's default bridge network with no
+published ports and no `--network host`, so each container's
+`:7777`/`:8201` was isolated in its own network namespace and no host
+daemon or host port was touched.
+
+This satisfies section 6's exact-commit driver requirement for the Linux
+rehearsal only. It does not by itself promote `0.0.49`: promotion
+additionally requires the separate real interactive Windows PowerShell 5.1
+rehearsal, which has still never passed for any published version — `0.0.49`
+included. The public `distribution-gate` runs on push of this recording
+commit. `0.0.49` remains a prerelease pending that Windows evidence, and
+this rehearsal deliberately did not attempt the Windows rehearsal or clear
+the release's prerelease flag.
+
 ### v0.0.48 Linux release rehearsal (exact driver commit)
 
 Ran 2026-09-13. This run satisfies section 6's exact-commit driver requirement
