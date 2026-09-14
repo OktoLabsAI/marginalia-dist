@@ -57,6 +57,11 @@ Profiles for tmux modes:
   --profile hosted-gemini  Choose Gemini with a fake exported key/model.
   --profile hosted-anthropic  Choose Anthropic with a fake exported key/model.
   --profile custom     Choose custom endpoint; requires --api-base and --model.
+  --profile custom-rootform  Hermetic /v1-only fake OpenAI endpoint (oMLX shape,
+                               non-chat model listed first): type the base in ROOT
+                               form (no /v1); proves discovery + pre-save verify +
+                               canonical /v1 save, then the dead-endpoint and
+                               no-silent-model failure paths.
   --profile existing-keep  Preseed LLM config and choose keep existing.
   --profile existing-inspect  Preseed LLM config and test it without writing.
   --profile existing-reconfigure  Preseed LLM config and reconfigure to LM Studio.
@@ -180,7 +185,7 @@ while [ "$#" -gt 0 ]; do
 done
 
 case "$PROFILE" in
-  interactive|skip|auto-lm-studio|lm-studio|ollama|litellm|hosted-openai|hosted-openrouter|hosted-gemini|hosted-anthropic|custom|existing-keep|existing-inspect|existing-reconfigure|disable-llm|release-lifecycle|onboard-prompt-yes|onboard-prompt-no|onboard-no-open|onboard-no-flag|onboard-upgrade-tty|onboard-non-tty) ;;
+  interactive|skip|auto-lm-studio|lm-studio|ollama|litellm|hosted-openai|hosted-openrouter|hosted-gemini|hosted-anthropic|custom|custom-rootform|existing-keep|existing-inspect|existing-reconfigure|disable-llm|release-lifecycle|onboard-prompt-yes|onboard-prompt-no|onboard-no-open|onboard-no-flag|onboard-upgrade-tty|onboard-non-tty) ;;
   *) die "unknown profile: $PROFILE" ;;
 esac
 case "$MODE:$PROFILE" in
@@ -212,6 +217,26 @@ profile_uses_fake_secret() {
     hosted-openai|hosted-openrouter|hosted-gemini|hosted-anthropic) return 0 ;;
     *) return 1 ;;
   esac
+}
+
+# custom-rootform: the hermetic endpoint serves ONLY under /v1/, so the pane
+# evidence must show discovery and verify probing the canonical /v1 URLs —
+# never the root-level paths the pre-0.0.49 root-form bug probed.
+check_custom_rootform_evidence() {
+  grep -Fq "Available models:" "$EVIDENCE" \
+    || die "custom-rootform discovery did not list models: $EVIDENCE"
+  grep -Fq "MOCK-REQ GET /v1/models" "$EVIDENCE" \
+    || die "custom-rootform discovery did not probe the canonical /v1/models: $EVIDENCE"
+  grep -Fq "MOCK-REQ POST /v1/chat/completions" "$EVIDENCE" \
+    || die "custom-rootform pre-save verify did not run a completion: $EVIDENCE"
+  grep -Fq "CUSTOM_ROOTFORM_DEAD_ENDPOINT_OK" "$EVIDENCE" \
+    || die "custom-rootform dead-endpoint follow-up did not pass: $EVIDENCE"
+  grep -Fq "CUSTOM_ROOTFORM_NO_SILENT_MODEL_OK" "$EVIDENCE" \
+    || die "custom-rootform no-silent-model follow-up did not pass: $EVIDENCE"
+  grep -Fq "MOCK-REQ GET /models" "$EVIDENCE" \
+    && die "custom-rootform probed a root-level /models (pre-0.0.49 bug): $EVIDENCE"
+  grep -Fq "MOCK-REQ POST /chat/completions" "$EVIDENCE" \
+    && die "custom-rootform probed a root-level /chat/completions (pre-0.0.49 bug): $EVIDENCE"
 }
 
 init_paths() {
@@ -497,8 +522,33 @@ MODEL = "mac-human-model"
 
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
+        print(f"MOCK-REQ GET {self.path}", flush=True)
         if self.path.rstrip("/") == "/v1/models":
             body = json.dumps({"data": [{"id": MODEL}]}).encode()
+            self.send_response(200)
+            self.send_header("content-type", "application/json")
+            self.send_header("content-length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        self.send_response(404)
+        self.end_headers()
+    def do_POST(self):
+        length = int(self.headers.get("content-length", 0) or 0)
+        payload = json.loads(self.rfile.read(length) or b"{}")
+        print(f"MOCK-REQ POST {self.path}", flush=True)
+        if self.path.rstrip("/") == "/v1/chat/completions":
+            body = json.dumps({
+                "id": "cmpl-mock",
+                "object": "chat.completion",
+                "model": payload.get("model", MODEL),
+                "choices": [{
+                    "index": 0,
+                    "message": {"role": "assistant", "content": "ok"},
+                    "finish_reason": "stop",
+                }],
+                "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+            }).encode()
             self.send_response(200)
             self.send_header("content-type", "application/json")
             self.send_header("content-length", str(len(body)))
@@ -531,8 +581,33 @@ MODEL = "mac-ollama-human-model"
 
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
+        print(f"MOCK-REQ GET {self.path}", flush=True)
         if self.path.rstrip("/") == "/v1/models":
             body = json.dumps({"data": [{"id": MODEL}]}).encode()
+            self.send_response(200)
+            self.send_header("content-type", "application/json")
+            self.send_header("content-length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        self.send_response(404)
+        self.end_headers()
+    def do_POST(self):
+        length = int(self.headers.get("content-length", 0) or 0)
+        payload = json.loads(self.rfile.read(length) or b"{}")
+        print(f"MOCK-REQ POST {self.path}", flush=True)
+        if self.path.rstrip("/") == "/v1/chat/completions":
+            body = json.dumps({
+                "id": "cmpl-mock",
+                "object": "chat.completion",
+                "model": payload.get("model", MODEL),
+                "choices": [{
+                    "index": 0,
+                    "message": {"role": "assistant", "content": "ok"},
+                    "finish_reason": "stop",
+                }],
+                "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+            }).encode()
             self.send_response(200)
             self.send_header("content-type", "application/json")
             self.send_header("content-length", str(len(body)))
@@ -565,6 +640,7 @@ MODEL = "mac-litellm-human-model"
 
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
+        print(f"MOCK-REQ GET {self.path}", flush=True)
         if self.path.rstrip("/") == "/v1/model/info":
             body = json.dumps({
                 "data": [
@@ -576,6 +652,30 @@ class Handler(BaseHTTPRequestHandler):
                         }
                     }
                 ]
+            }).encode()
+            self.send_response(200)
+            self.send_header("content-type", "application/json")
+            self.send_header("content-length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        self.send_response(404)
+        self.end_headers()
+    def do_POST(self):
+        length = int(self.headers.get("content-length", 0) or 0)
+        payload = json.loads(self.rfile.read(length) or b"{}")
+        print(f"MOCK-REQ POST {self.path}", flush=True)
+        if self.path.rstrip("/") == "/v1/chat/completions":
+            body = json.dumps({
+                "id": "cmpl-mock",
+                "object": "chat.completion",
+                "model": payload.get("model", MODEL),
+                "choices": [{
+                    "index": 0,
+                    "message": {"role": "assistant", "content": "ok"},
+                    "finish_reason": "stop",
+                }],
+                "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
             }).encode()
             self.send_response(200)
             self.send_header("content-type", "application/json")
@@ -598,6 +698,113 @@ PY
   done
   echo "mock LiteLLM server did not start" >&2
   exit 80
+}
+
+# Hermetic OpenAI-compatible endpoint for the custom-rootform profile:
+# serves ONLY under /v1/ (the oMLX shape that exposed the root-form
+# onboarding bug). The models list is deliberately ordered with a
+# non-chat model first, so a silent models[0] default would be visible
+# in the saved config. Every request is echoed as MOCK-REQ so the tmux
+# evidence shows exactly which endpoints discovery and verify probed.
+start_mock_custom_openai() {
+  python3 - <<'PY' &
+import json
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+MODELS = ["fake-nonchat-first", "fake-chat-model"]
+
+class Handler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        print(f"MOCK-REQ GET {self.path}", flush=True)
+        if self.path.rstrip("/") == "/v1/models":
+            body = json.dumps({"data": [{"id": m} for m in MODELS]}).encode()
+            self.send_response(200)
+            self.send_header("content-type", "application/json")
+            self.send_header("content-length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        self.send_response(404)
+        self.end_headers()
+    def do_POST(self):
+        length = int(self.headers.get("content-length", 0) or 0)
+        payload = json.loads(self.rfile.read(length) or b"{}")
+        print(f"MOCK-REQ POST {self.path}", flush=True)
+        if self.path.rstrip("/") == "/v1/chat/completions":
+            body = json.dumps({
+                "id": "cmpl-mock",
+                "object": "chat.completion",
+                "model": payload.get("model", MODELS[1]),
+                "choices": [{
+                    "index": 0,
+                    "message": {"role": "assistant", "content": "ok"},
+                    "finish_reason": "stop",
+                }],
+                "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+            }).encode()
+            self.send_response(200)
+            self.send_header("content-type", "application/json")
+            self.send_header("content-length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        self.send_response(404)
+        self.end_headers()
+    def log_message(self, *_args):
+        return
+
+ThreadingHTTPServer(("127.0.0.1", 18123), Handler).serve_forever()
+PY
+  MOCK_PID="$!"
+  trap 'kill "$MOCK_PID" >/dev/null 2>&1 || true' EXIT
+  for _ in $(seq 1 30); do
+    curl -fsS http://127.0.0.1:18123/v1/models >/dev/null 2>&1 && return
+    sleep 0.2
+  done
+  echo "mock custom OpenAI server did not start" >&2
+  exit 80
+}
+
+# custom-rootform follow-ups, run in the sandbox after the install:
+# (f) dead endpoint -> pre-save verify fails, NOTHING is saved, and the
+#     exact attempted URL is the canonical /v1 completion URL derived
+#     from the root-form base; (g) a non-interactive run without --model
+#     never silently defaults to models[0] (here: the non-chat first).
+run_custom_rootform_followups() {
+  local dead_out nomodel_out
+  dead_out="$HOME/.marginalia/custom-rootform-dead-endpoint.out"
+  printf 'custom-rootform follow-up (f): dead endpoint -> verify fails, nothing saved\n'
+  if env -u MARGINALIA_VAULT marginalia onboard --vault dead-endpoint-vault --non-interactive \
+      --provider custom --api-base http://127.0.0.1:18124 --model fake-any-model \
+      >"$dead_out" 2>&1; then
+    echo "dead-endpoint onboard unexpectedly succeeded" >&2
+    return 1
+  fi
+  cat "$dead_out"
+  grep -Fq 'verify failed — nothing was saved:' "$dead_out" \
+    || { echo "dead-endpoint run did not report verify failure: $dead_out" >&2; return 1; }
+  grep -Fq 'attempted: POST http://127.0.0.1:18124/v1/chat/completions' "$dead_out" \
+    || { echo "dead-endpoint run did not show the exact attempted URL: $dead_out" >&2; return 1; }
+  ! grep -q '^llm:' "$HOME/.marginalia/vaults/dead-endpoint-vault/marginalia.yaml" \
+    || { echo "dead-endpoint run saved an llm block" >&2; return 1; }
+  echo CUSTOM_ROOTFORM_DEAD_ENDPOINT_OK
+
+  nomodel_out="$HOME/.marginalia/custom-rootform-no-model.out"
+  printf 'custom-rootform follow-up (g): non-interactive without --model refuses models[0]\n'
+  if env -u MARGINALIA_VAULT marginalia onboard --vault no-model-vault --non-interactive \
+      --provider custom --api-base http://127.0.0.1:18123 \
+      >"$nomodel_out" 2>&1; then
+    echo "no-model onboard unexpectedly succeeded" >&2
+    return 1
+  fi
+  cat "$nomodel_out"
+  grep -Fq 'no --model given and no preset default among the discovered models' "$nomodel_out" \
+    || { echo "no-model run did not demand an explicit --model: $nomodel_out" >&2; return 1; }
+  grep -Fq 'fake-nonchat-first' "$nomodel_out" \
+    || { echo "no-model run did not list the discovered models: $nomodel_out" >&2; return 1; }
+  ! grep -q '^llm:' "$HOME/.marginalia/vaults/no-model-vault/marginalia.yaml" \
+    || { echo "no-model run saved an llm block" >&2; return 1; }
+  echo CUSTOM_ROOTFORM_NO_SILENT_MODEL_OK
 }
 
 seed_existing_config() {
@@ -670,6 +877,9 @@ elif [ "$PROFILE" = "hosted-openai" ] || [ "$PROFILE" = "hosted-openrouter" ] ||
   export MARGINALIA_LLM_MODEL="$MODEL"
   export MARGINALIA_LLM_API_KEY_ENV=MARGINALIA_HOSTED_TEST_KEY
   export MARGINALIA_HOSTED_TEST_KEY=sk-fake-public-installer-test
+fi
+elif [ "$PROFILE" = "custom-rootform" ]; then
+  start_mock_custom_openai
 fi
 
 printf 'TEST_HOME=%s\nINSTALL_URL=%s\nPROFILE=%s\n' "$HOME" "$INSTALL_URL" "$PROFILE"
@@ -778,10 +988,19 @@ case "$PROFILE" in
     grep -q 'mac-human-model' "$YAML"
     ! grep -q 'preexisting-model' "$YAML"
     ;;
+  custom-rootform)
+    grep -q 'provider: openai' "$YAML"
+    grep -q 'api_base: http://127.0.0.1:18123/v1' "$YAML"
+    grep -q 'fake-chat-model' "$YAML"
+    ! grep -q 'fake-nonchat-first' "$YAML"
+    ;;
   disable-llm)
     grep -q 'enabled: false' "$YAML"
     ;;
 esac
+if [ "$PROFILE" = "custom-rootform" ]; then
+  run_custom_rootform_followups
+fi
 marginalia stop >/dev/null 2>&1 || true
 echo MAC_TMUX_HUMAN_INSTALL_OK
 RUNNER
@@ -807,8 +1026,33 @@ MODEL = "docker-human-model"
 
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
+        print(f"MOCK-REQ GET {self.path}", flush=True)
         if self.path.rstrip("/") == "/v1/models":
             body = json.dumps({"data": [{"id": MODEL}]}).encode()
+            self.send_response(200)
+            self.send_header("content-type", "application/json")
+            self.send_header("content-length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        self.send_response(404)
+        self.end_headers()
+    def do_POST(self):
+        length = int(self.headers.get("content-length", 0) or 0)
+        payload = json.loads(self.rfile.read(length) or b"{}")
+        print(f"MOCK-REQ POST {self.path}", flush=True)
+        if self.path.rstrip("/") == "/v1/chat/completions":
+            body = json.dumps({
+                "id": "cmpl-mock",
+                "object": "chat.completion",
+                "model": payload.get("model", MODEL),
+                "choices": [{
+                    "index": 0,
+                    "message": {"role": "assistant", "content": "ok"},
+                    "finish_reason": "stop",
+                }],
+                "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+            }).encode()
             self.send_response(200)
             self.send_header("content-type", "application/json")
             self.send_header("content-length", str(len(body)))
@@ -841,8 +1085,33 @@ MODEL = "docker-ollama-human-model"
 
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
+        print(f"MOCK-REQ GET {self.path}", flush=True)
         if self.path.rstrip("/") == "/v1/models":
             body = json.dumps({"data": [{"id": MODEL}]}).encode()
+            self.send_response(200)
+            self.send_header("content-type", "application/json")
+            self.send_header("content-length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        self.send_response(404)
+        self.end_headers()
+    def do_POST(self):
+        length = int(self.headers.get("content-length", 0) or 0)
+        payload = json.loads(self.rfile.read(length) or b"{}")
+        print(f"MOCK-REQ POST {self.path}", flush=True)
+        if self.path.rstrip("/") == "/v1/chat/completions":
+            body = json.dumps({
+                "id": "cmpl-mock",
+                "object": "chat.completion",
+                "model": payload.get("model", MODEL),
+                "choices": [{
+                    "index": 0,
+                    "message": {"role": "assistant", "content": "ok"},
+                    "finish_reason": "stop",
+                }],
+                "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+            }).encode()
             self.send_response(200)
             self.send_header("content-type", "application/json")
             self.send_header("content-length", str(len(body)))
@@ -875,6 +1144,7 @@ MODEL = "docker-litellm-human-model"
 
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
+        print(f"MOCK-REQ GET {self.path}", flush=True)
         if self.path.rstrip("/") == "/v1/model/info":
             body = json.dumps({
                 "data": [
@@ -886,6 +1156,30 @@ class Handler(BaseHTTPRequestHandler):
                         }
                     }
                 ]
+            }).encode()
+            self.send_response(200)
+            self.send_header("content-type", "application/json")
+            self.send_header("content-length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        self.send_response(404)
+        self.end_headers()
+    def do_POST(self):
+        length = int(self.headers.get("content-length", 0) or 0)
+        payload = json.loads(self.rfile.read(length) or b"{}")
+        print(f"MOCK-REQ POST {self.path}", flush=True)
+        if self.path.rstrip("/") == "/v1/chat/completions":
+            body = json.dumps({
+                "id": "cmpl-mock",
+                "object": "chat.completion",
+                "model": payload.get("model", MODEL),
+                "choices": [{
+                    "index": 0,
+                    "message": {"role": "assistant", "content": "ok"},
+                    "finish_reason": "stop",
+                }],
+                "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
             }).encode()
             self.send_response(200)
             self.send_header("content-type", "application/json")
@@ -908,6 +1202,113 @@ PY
   done
   echo "mock LiteLLM server did not start" >&2
   exit 80
+}
+
+# Hermetic OpenAI-compatible endpoint for the custom-rootform profile:
+# serves ONLY under /v1/ (the oMLX shape that exposed the root-form
+# onboarding bug). The models list is deliberately ordered with a
+# non-chat model first, so a silent models[0] default would be visible
+# in the saved config. Every request is echoed as MOCK-REQ so the tmux
+# evidence shows exactly which endpoints discovery and verify probed.
+start_mock_custom_openai() {
+  python3 - <<'PY' &
+import json
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+MODELS = ["fake-nonchat-first", "fake-chat-model"]
+
+class Handler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        print(f"MOCK-REQ GET {self.path}", flush=True)
+        if self.path.rstrip("/") == "/v1/models":
+            body = json.dumps({"data": [{"id": m} for m in MODELS]}).encode()
+            self.send_response(200)
+            self.send_header("content-type", "application/json")
+            self.send_header("content-length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        self.send_response(404)
+        self.end_headers()
+    def do_POST(self):
+        length = int(self.headers.get("content-length", 0) or 0)
+        payload = json.loads(self.rfile.read(length) or b"{}")
+        print(f"MOCK-REQ POST {self.path}", flush=True)
+        if self.path.rstrip("/") == "/v1/chat/completions":
+            body = json.dumps({
+                "id": "cmpl-mock",
+                "object": "chat.completion",
+                "model": payload.get("model", MODELS[1]),
+                "choices": [{
+                    "index": 0,
+                    "message": {"role": "assistant", "content": "ok"},
+                    "finish_reason": "stop",
+                }],
+                "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+            }).encode()
+            self.send_response(200)
+            self.send_header("content-type", "application/json")
+            self.send_header("content-length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        self.send_response(404)
+        self.end_headers()
+    def log_message(self, *_args):
+        return
+
+ThreadingHTTPServer(("127.0.0.1", 18123), Handler).serve_forever()
+PY
+  MOCK_PID="$!"
+  trap 'kill "$MOCK_PID" >/dev/null 2>&1 || true' EXIT
+  for _ in $(seq 1 30); do
+    curl -fsS http://127.0.0.1:18123/v1/models >/dev/null 2>&1 && return
+    sleep 0.2
+  done
+  echo "mock custom OpenAI server did not start" >&2
+  exit 80
+}
+
+# custom-rootform follow-ups, run in the sandbox after the install:
+# (f) dead endpoint -> pre-save verify fails, NOTHING is saved, and the
+#     exact attempted URL is the canonical /v1 completion URL derived
+#     from the root-form base; (g) a non-interactive run without --model
+#     never silently defaults to models[0] (here: the non-chat first).
+run_custom_rootform_followups() {
+  local dead_out nomodel_out
+  dead_out="$HOME/.marginalia/custom-rootform-dead-endpoint.out"
+  printf 'custom-rootform follow-up (f): dead endpoint -> verify fails, nothing saved\n'
+  if env -u MARGINALIA_VAULT marginalia onboard --vault dead-endpoint-vault --non-interactive \
+      --provider custom --api-base http://127.0.0.1:18124 --model fake-any-model \
+      >"$dead_out" 2>&1; then
+    echo "dead-endpoint onboard unexpectedly succeeded" >&2
+    return 1
+  fi
+  cat "$dead_out"
+  grep -Fq 'verify failed — nothing was saved:' "$dead_out" \
+    || { echo "dead-endpoint run did not report verify failure: $dead_out" >&2; return 1; }
+  grep -Fq 'attempted: POST http://127.0.0.1:18124/v1/chat/completions' "$dead_out" \
+    || { echo "dead-endpoint run did not show the exact attempted URL: $dead_out" >&2; return 1; }
+  ! grep -q '^llm:' "$HOME/.marginalia/vaults/dead-endpoint-vault/marginalia.yaml" \
+    || { echo "dead-endpoint run saved an llm block" >&2; return 1; }
+  echo CUSTOM_ROOTFORM_DEAD_ENDPOINT_OK
+
+  nomodel_out="$HOME/.marginalia/custom-rootform-no-model.out"
+  printf 'custom-rootform follow-up (g): non-interactive without --model refuses models[0]\n'
+  if env -u MARGINALIA_VAULT marginalia onboard --vault no-model-vault --non-interactive \
+      --provider custom --api-base http://127.0.0.1:18123 \
+      >"$nomodel_out" 2>&1; then
+    echo "no-model onboard unexpectedly succeeded" >&2
+    return 1
+  fi
+  cat "$nomodel_out"
+  grep -Fq 'no --model given and no preset default among the discovered models' "$nomodel_out" \
+    || { echo "no-model run did not demand an explicit --model: $nomodel_out" >&2; return 1; }
+  grep -Fq 'fake-nonchat-first' "$nomodel_out" \
+    || { echo "no-model run did not list the discovered models: $nomodel_out" >&2; return 1; }
+  ! grep -q '^llm:' "$HOME/.marginalia/vaults/no-model-vault/marginalia.yaml" \
+    || { echo "no-model run saved an llm block" >&2; return 1; }
+  echo CUSTOM_ROOTFORM_NO_SILENT_MODEL_OK
 }
 
 seed_existing_config() {
@@ -1443,6 +1844,9 @@ elif [ "$PROFILE" = "hosted-openai" ] || [ "$PROFILE" = "hosted-openrouter" ] ||
   export MARGINALIA_LLM_API_KEY_ENV=MARGINALIA_HOSTED_TEST_KEY
   export MARGINALIA_HOSTED_TEST_KEY=sk-fake-public-installer-test
 fi
+elif [ "$PROFILE" = "custom-rootform" ]; then
+  start_mock_custom_openai
+fi
 
 if [ "$PROFILE" = "release-lifecycle" ]; then
   printf 'DRIVER_COMMIT=%s\nDRIVER_URL=%s\nDRIVER_SHA256=%s\n' \
@@ -1558,10 +1962,19 @@ case "$PROFILE" in
     grep -q 'docker-human-model' "$YAML"
     ! grep -q 'preexisting-model' "$YAML"
     ;;
+  custom-rootform)
+    grep -q 'provider: openai' "$YAML"
+    grep -q 'api_base: http://127.0.0.1:18123/v1' "$YAML"
+    grep -q 'fake-chat-model' "$YAML"
+    ! grep -q 'fake-nonchat-first' "$YAML"
+    ;;
   disable-llm)
     grep -q 'enabled: false' "$YAML"
     ;;
 esac
+if [ "$PROFILE" = "custom-rootform" ]; then
+  run_custom_rootform_followups
+fi
 if [ "$PROFILE" = "release-lifecycle" ]; then
   run_release_lifecycle
 else
@@ -1733,6 +2146,18 @@ drive_profile() {
       tmux send-keys -t "$SESSION" C-m
       wait_for_text "Model" 120
       tmux send-keys -t "$SESSION" "$MODEL" C-m
+      ;;
+    custom-rootform)
+      # The base is typed in ROOT form (no /v1): the onboarding resolver must
+      # derive {root}/v1 for both discovery and the pre-save verify.
+      wait_for_text "Provider" 900
+      tmux send-keys -t "$SESSION" "9" C-m
+      wait_for_text "Base URL" 120
+      tmux send-keys -t "$SESSION" "http://127.0.0.1:18123" C-m
+      wait_for_text "API key" 120
+      tmux send-keys -t "$SESSION" C-m
+      wait_for_text "Model" 120
+      tmux send-keys -t "$SESSION" "fake-chat-model" C-m
       ;;
     existing-keep)
       wait_for_text "Action" 900
@@ -1944,6 +2369,9 @@ run_host_tmux() {
       grep -Fq "Testing existing LLM config" "$EVIDENCE" || die "inspection branch did not run: $EVIDENCE"
       grep -Fq "config unchanged" "$EVIDENCE" || die "inspection branch did not preserve config: $EVIDENCE"
     fi
+    if [ "$PROFILE" = "custom-rootform" ]; then
+      check_custom_rootform_evidence
+    fi
     printf 'tmux host install passed. Evidence: %s\n' "$EVIDENCE"
   fi
 }
@@ -1983,6 +2411,9 @@ run_docker_tmux() {
     if [ "$PROFILE" = "existing-inspect" ]; then
       grep -Fq "Testing existing LLM config" "$EVIDENCE" || die "inspection branch did not run: $EVIDENCE"
       grep -Fq "config unchanged" "$EVIDENCE" || die "inspection branch did not preserve config: $EVIDENCE"
+    fi
+    if [ "$PROFILE" = "custom-rootform" ]; then
+      check_custom_rootform_evidence
     fi
     printf 'Docker tmux install passed. Evidence: %s\n' "$EVIDENCE"
   fi
