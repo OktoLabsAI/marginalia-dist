@@ -13,7 +13,7 @@ INSTALL_URL="${MARGINALIA_INSTALL_URL:-$DEFAULT_URL}"
 TEST_HOME="${MARGINALIA_TEST_HOME:-}"
 ORIGINAL_HOME="${HOME:-}"
 VAULT="${MARGINALIA_VAULT:-mynotes}"
-EXPECTED_VERSION="${MARGINALIA_EXPECTED_VERSION:-0.0.49}"
+EXPECTED_VERSION="${MARGINALIA_EXPECTED_VERSION:-0.0.50}"
 PROVIDER="${MARGINALIA_LLM_PROVIDER:-}"
 API_BASE="${MARGINALIA_LLM_API_BASE:-}"
 MODEL="${MARGINALIA_LLM_MODEL:-}"
@@ -221,7 +221,7 @@ profile_uses_fake_secret() {
 
 # custom-rootform: the hermetic endpoint serves ONLY under /v1/, so the pane
 # evidence must show discovery and verify probing the canonical /v1 URLs —
-# never the root-level paths the pre-0.0.49 root-form bug probed.
+# never the root-level paths the pre-0.0.50 root-form bug probed.
 check_custom_rootform_evidence() {
   grep -Fq "Available models:" "$EVIDENCE" \
     || die "custom-rootform discovery did not list models: $EVIDENCE"
@@ -234,9 +234,9 @@ check_custom_rootform_evidence() {
   grep -Fq "CUSTOM_ROOTFORM_NO_SILENT_MODEL_OK" "$EVIDENCE" \
     || die "custom-rootform no-silent-model follow-up did not pass: $EVIDENCE"
   grep -Fq "MOCK-REQ GET /models" "$EVIDENCE" \
-    && die "custom-rootform probed a root-level /models (pre-0.0.49 bug): $EVIDENCE"
+    && die "custom-rootform probed a root-level /models (pre-0.0.50 bug): $EVIDENCE"
   grep -Fq "MOCK-REQ POST /chat/completions" "$EVIDENCE" \
-    && die "custom-rootform probed a root-level /chat/completions (pre-0.0.49 bug): $EVIDENCE"
+    && die "custom-rootform probed a root-level /chat/completions (pre-0.0.50 bug): $EVIDENCE"
   return 0
 }
 
