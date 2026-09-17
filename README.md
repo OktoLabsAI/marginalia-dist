@@ -5,12 +5,29 @@ local-first knowledge graph you can drive from Claude Code (MCP), the CLI, or as
 a Python library.
 
 The current public prerelease is `0.0.50`: source tag
-`85f2b28bd1c23c1cdc5fdf6389d7ba96862bda6b`, wheel
+`5264b971dc3e97390a25cff06b8ff0d1dcfeb04d`, wheel
 [`marginalia-0.0.50-py3-none-any.whl`](https://github.com/OktoLabsAI/marginalia-dist/releases/download/v0.0.50/marginalia-0.0.50-py3-none-any.whl),
-SHA-256 `8274abea746e9ec6d1b8450e5d416ea626ec8e325effbe1f240929ad9ec9d4c3`.
+SHA-256 `cc524877686ad0227d6cd208c487f027acf1f1e25772c98afe00b96bbdf3ea1e`.
 
-`0.0.50` fixes the onboarding base-URL handling for OpenAI-compatible endpoints, in one
-place and for every surface that writes it:
+`0.0.50` is an ingest-quality release. Defects were found by auditing actual graph
+nodes over a 76-document corpus rather than by trusting counters:
+
+1. **Literal claims are no longer silently discarded.** The per-block edge accumulator
+   keyed literal claims on `dst_ref`, which is empty for a literal, so every literal
+   claim sharing (predicate, subject, block) collapsed into the first. Replay recovered
+   165 of 358 discarded claims with zero residual duplicates.
+2. **Blocking no longer welds numbered items together.** A trailing numeric token was
+   read as a surname, so `TASK-01` yielded `01` and every numbered item joined one
+   blocking family, flooding the alias cap with identity-grade false pairs.
+3. **The Web UI folder picker applies the same filter as the API.** A folder the walk
+   reduced to 76 files was queued as 168; both paths now share one selection predicate.
+4. **Unregistered predicates are resolved against the live registry at ingestion**
+   (same / inverse / narrower / distinct) instead of being minted freely.
+5. **Per-role `sampling_payload`** accepts a verbatim JSON dict, so a role can send
+   provider-specific keys the managed parameter map could not express.
+6. **`llm_request` traces report what is actually sent on the wire**, not pre-merge values.
+
+The base-URL canonicalization below shipped in `0.0.49` and is unchanged in `0.0.50`:
 
 1. **The base URL is canonicalized in a single resolver, regardless of the form typed.**
    Discovery used to probe `{base}/models` (treating user input as the server root) while
@@ -299,14 +316,42 @@ Windows PowerShell rehearsal.
 
 ### v0.0.50 Linux release rehearsal (exact driver commit)
 
-Ran 2026-09-14. The 0.0.50 harness adaptation (provider menu gained the
+Ran 2026-09-17. The tester was fetched from the exact dist commit
+`4300d4a0576f90b0c2609f4512b4c3ed6f37d1e5` (driver SHA-256 `18f591e3f7fd876d0fced187eaa534ce38ea2c52ebf0926b5ef726d7e3f1cc53`) and that same SHA was passed back as
+`--driver-commit`, so the run is pinned to a published commit rather than a
+moving branch or a local checkout. `v0.0.50` in this repo points at that commit.
+
+Every stage verifies the published `0.0.50` wheel SHA-256
+`cc524877686ad0227d6cd208c487f027acf1f1e25772c98afe00b96bbdf3ea1e`, matching `release-manifest.json`. All thirteen
+`RELEASE_LIFECYCLE_*_OK` markers and the final `DOCKER_TMUX_RELEASE_LIFECYCLE_OK`
+occur in one fresh Ubuntu container and one real tmux TTY. The run exercised a
+genuine upgrade path: `marginalia-0.0.40-py3-none-any.whl` installed first, then
+updated to `marginalia-0.0.50-py3-none-any.whl`. The four `error:` lines in the
+pane are the asserted refusals (custom-port, unverified-live-PID, and two
+activation rollbacks), each paired with its `_OK` marker.
+
+Retained pane evidence:
+[`evidence/v0.0.50/linux-docker-tmux-release-lifecycle.txt`](evidence/v0.0.50/linux-docker-tmux-release-lifecycle.txt),
+SHA-256 `04850e6d70a709790f498e03570d3fad745a72a39d9c4986bcc2eff3b936d622`.
+
+Only the `release-lifecycle` profile was run for `0.0.50`; the
+`greenfield-first-run` and `custom-rootform` profiles were not re-run, so their
+`0.0.49` evidence below is the most recent for those paths.
+
+This is Linux rehearsal evidence only. It does not promote `0.0.50`: promotion
+still waits on a real interactive Windows PowerShell 5.1 lifecycle rehearsal,
+which has never passed for any published version.
+
+### v0.0.49 Linux release rehearsal (exact driver commit)
+
+Ran 2026-09-14. The 0.0.49 harness adaptation (provider menu gained the
 `pi_cli`/`codex_cli` entries, the 0.0.47+ onboarding asks for the graph
-backend before the provider, and the 0.0.50 onboarding verifies a real
-completion before saving) required four fix commits after the 0.0.50 bake
+backend before the provider, and the 0.0.49 onboarding verifies a real
+completion before saving) required four fix commits after the 0.0.49 bake
 (`de929b4` mock-launch chain, `266631d` backend prompt, `13355f9` provider
 11, `f1ea4e3` evidence-checker return status). All three rehearsals below
 therefore drove from the final dist-main commit
-`f1ea4e3591b2d65db3b656933e30281249d867b5`, and `v0.0.50` in this repo points
+`f1ea4e3591b2d65db3b656933e30281249d867b5`, and `v0.0.49` in this repo points
 at that exact commit.
 
 First, the release lifecycle: `./test-install.sh --docker-tmux --profile
@@ -314,12 +359,12 @@ release-lifecycle --driver-commit f1ea4e3591b2d65db3b656933e30281249d867b5`
 fetched the driver from the exact public raw URL of that commit. The pane
 header records `DRIVER_COMMIT=f1ea4e3591b2d65db3b656933e30281249d867b5` with
 driver, installer, and manifest URLs and SHA-256 values resolved from that
-pinned commit. Every successor stage verifies the published `0.0.50` wheel
+pinned commit. Every successor stage verifies the published `0.0.49` wheel
 SHA-256 `8274abea746e9ec6d1b8450e5d416ea626ec8e325effbe1f240929ad9ec9d4c3`,
 matching `release-manifest.json`. All thirteen `RELEASE_LIFECYCLE_*_OK`
 markers and the final `DOCKER_TMUX_RELEASE_LIFECYCLE_OK` occur exactly once,
 and the final line records tmux pane status 0. Retained transcript:
-[`evidence/v0.0.50/linux-docker-tmux-release-lifecycle.txt`](evidence/v0.0.50/linux-docker-tmux-release-lifecycle.txt),
+[`evidence/v0.0.49/linux-docker-tmux-release-lifecycle.txt`](evidence/v0.0.49/linux-docker-tmux-release-lifecycle.txt),
 SHA-256 `5f444a7d4c261cf78fdd782b7b8b1902792d89714d7623064e2fb7ec52841e07`
 (54,708 bytes; 1,978 lines).
 
@@ -338,16 +383,16 @@ Answering `Y` (Enter) ran `marginalia onboard`: the default graph backend
 (`grafx`) was accepted, the in-flow user-named vault `onboarded-vault` was
 created, and provider choice `0` skipped LLM setup, so the created
 `marginalia.yaml` carries no `llm:` block. The daemon then started
-(`server: ready (http://127.0.0.1:7777, version 0.0.50)`), the run tore down
+(`server: ready (http://127.0.0.1:7777, version 0.0.49)`), the run tore down
 with `marginalia stop`, and it ended in `DOCKER_TMUX_HUMAN_INSTALL_OK` with
 tmux pane status 0. Retained transcript:
-[`evidence/v0.0.50/linux-docker-tmux-greenfield-first-run.txt`](evidence/v0.0.50/linux-docker-tmux-greenfield-first-run.txt),
+[`evidence/v0.0.49/linux-docker-tmux-greenfield-first-run.txt`](evidence/v0.0.49/linux-docker-tmux-greenfield-first-run.txt),
 SHA-256 `1f0e72081eaa80b570bce545e6179f07c6be6ad7728c0210678ebef19f438189`
 (9,604 bytes; 334 lines).
 
-Third, new for 0.0.50, the `custom-rootform` profile exercised the
+Third, new for 0.0.49, the `custom-rootform` profile exercised the
 verify-before-save fix end to end against a hermetic `/v1`-only mock OpenAI
-server inside the container (the documented 0.0.50 choice instead of
+server inside the container (the documented 0.0.49 choice instead of
 host-networking a LAN endpoint — no LAN address appears in any retained
 evidence). The driven install (`--profile custom-rootform`) entered the
 base URL `http://127.0.0.1:18123` (no trailing `/v1`, root form) and model
@@ -366,10 +411,10 @@ the vault `marginalia.yaml` contains no `llm:` block
 `--model` refused to pick `models[0]`, printing the exact error listing the
 discovered models and saving nothing
 (`CUSTOM_ROOTFORM_NO_SILENT_MODEL_OK`). No root-level `MOCK-REQ GET /models`
-or `MOCK-REQ POST /chat/completions` probe (the pre-0.0.50 bug) appears
+or `MOCK-REQ POST /chat/completions` probe (the pre-0.0.49 bug) appears
 anywhere in the transcript. It ended in `DOCKER_TMUX_HUMAN_INSTALL_OK` with
 tmux pane status 0. Retained transcript:
-[`evidence/v0.0.50/linux-docker-tmux-custom-rootform.txt`](evidence/v0.0.50/linux-docker-tmux-custom-rootform.txt),
+[`evidence/v0.0.49/linux-docker-tmux-custom-rootform.txt`](evidence/v0.0.49/linux-docker-tmux-custom-rootform.txt),
 SHA-256 `e8133c6411ac5756851855362512cefe7bf951df2bca463586dd93968eab53bd`
 (10,820 bytes; 360 lines).
 
@@ -379,11 +424,11 @@ published ports and no `--network host`, so each container's
 daemon or host port was touched.
 
 This satisfies section 6's exact-commit driver requirement for the Linux
-rehearsal only. It does not by itself promote `0.0.50`: promotion
+rehearsal only. It does not by itself promote `0.0.49`: promotion
 additionally requires the separate real interactive Windows PowerShell 5.1
-rehearsal, which has still never passed for any published version — `0.0.50`
+rehearsal, which has still never passed for any published version — `0.0.49`
 included. The public `distribution-gate` runs on push of this recording
-commit. `0.0.50` remains a prerelease pending that Windows evidence, and
+commit. `0.0.49` remains a prerelease pending that Windows evidence, and
 this rehearsal deliberately did not attempt the Windows rehearsal or clear
 the release's prerelease flag.
 
