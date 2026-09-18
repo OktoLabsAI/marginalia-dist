@@ -39,9 +39,9 @@ set -euo pipefail
 # ── config ────────────────────────────────────────────────────────────────
 # The public distribution copy of this script bakes a release-wheel URL here so
 # `curl … | bash` needs no env. Empty in the source repo (which clones instead).
-DEFAULT_WHEEL_URL="${MARGINALIA_DEFAULT_WHEEL_URL:-https://github.com/OktoLabsAI/marginalia-dist/releases/download/v0.0.50/marginalia-0.0.50-py3-none-any.whl}"
+DEFAULT_WHEEL_URL="${MARGINALIA_DEFAULT_WHEEL_URL:-https://github.com/OktoLabsAI/marginalia-dist/releases/download/v0.1.0/marginalia-0.1.0-py3-none-any.whl}"
 DEFAULT_MANIFEST_URL="${MARGINALIA_DEFAULT_MANIFEST_URL:-https://raw.githubusercontent.com/OktoLabsAI/marginalia-dist/main/release-manifest.json}"
-EXPECTED_VERSION="${MARGINALIA_EXPECTED_VERSION:-0.0.50}"
+EXPECTED_VERSION="${MARGINALIA_EXPECTED_VERSION:-0.1.0}"
 EXTRAS="serve,litellm"
 PY_VERSION="3.12"
 REPO="${MARGINALIA_REPO:-git@github.com:OktoLabsAI/marginalia.git}"
@@ -113,13 +113,18 @@ validate_preseed_inputs
 # The plain-path first-run prompt (0.0.48) is opt-out only; unknown flags die
 # so a typo can never be mistaken for an opt-out. `bash -s -- --no-onboard`
 # and `bash install.sh --no-onboard` both land here.
+# Guarded on direct execution: the source-repo helper tests and the CI wheel
+# gate `source` the prefix of this file above the EXIT trap, passing their own
+# positional arguments. Unguarded, those paths hit the unknown-flag die.
 NO_ONBOARD=""
-for arg in "$@"; do
-  case "${arg}" in
-    --no-onboard) NO_ONBOARD="1" ;;
-    *) die "unknown install.sh flag: ${arg} (supported: --no-onboard)" ;;
-  esac
-done
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then
+  for arg in "$@"; do
+    case "${arg}" in
+      --no-onboard) NO_ONBOARD="1" ;;
+      *) die "unknown install.sh flag: ${arg} (supported: --no-onboard)" ;;
+    esac
+  done
+fi
 
 open_application_ui() {
   local url="$1"

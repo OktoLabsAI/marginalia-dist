@@ -4,10 +4,15 @@ One-shot installer for [Marginalia](https://github.com/OktoLabsAI/marginalia), a
 local-first knowledge graph you can drive from Claude Code (MCP), the CLI, or as
 a Python library.
 
-The current public prerelease is `0.0.50`: source tag
-`5264b971dc3e97390a25cff06b8ff0d1dcfeb04d`, wheel
-[`marginalia-0.0.50-py3-none-any.whl`](https://github.com/OktoLabsAI/marginalia-dist/releases/download/v0.0.50/marginalia-0.0.50-py3-none-any.whl),
-SHA-256 `cc524877686ad0227d6cd208c487f027acf1f1e25772c98afe00b96bbdf3ea1e`.
+The current release is `0.1.0`, the first version designated stable: source tag
+`v0.1.0` at commit `8e0e9ae2c51e6c452705548dcba5af8fd77d909c`, wheel
+[`marginalia-0.1.0-py3-none-any.whl`](https://github.com/OktoLabsAI/marginalia-dist/releases/download/v0.1.0/marginalia-0.1.0-py3-none-any.whl),
+SHA-256 `185d787947d524f6fd7a88d120c6bbbff1d36d55348eb18d11bdf2c65bce8591`,
+1,220,770 bytes. It succeeds the `0.0.50` prerelease. Read the verification
+status below before treating "stable" as a claim about coverage.
+
+The release notes immediately below describe the preceding `0.0.50` and `0.0.49`
+prereleases and are kept as history from those releases.
 
 `0.0.50` is an ingest-quality release. Defects were found by auditing actual graph
 nodes over a 76-document corpus rather than by trusting counters:
@@ -58,23 +63,29 @@ The base-URL canonicalization below shipped in `0.0.49` and is unchanged in `0.0
    a fresh install would get — previously broken root-form configs start working, and
    correctly saved `/v1` configs are unchanged.
 
-GitHub Actions is unavailable for the private source repository (billing not enabled), so the
-`marginalia` CI jobs did not run for this release. The model-free test suite passed green on
-the release-candidate commit `2649f2a` (3,762 tests, per that commit's recorded verification). The
-eval/recall-floor gates were reproduced locally at the exact tagged source commit (provenance
-gate 32/32 gold targets and 20/20 distractors; recall floor against the committed baseline:
-hard-recall@10 0.4688 (15/32), extraction-completeness 0.5625 (18/32), MRR@10 0.4348,
-precision@10 0.2, no regressions), and the clean wheel build, the dependency-contract
-(17/17) and footprint (1/1) checks, and every advertised runtime extra (embeddings, ladybug,
-jsonld, mcp, serve, litellm, bedrock, sentence-transformers) were verified against the exact
-published wheel above in clean Python 3.12 environments; the Windows managed-credentials (DPAPI)
-gate could not be reproduced outside Windows and is not covered by any local substitute in
-this release. The public `marginalia-dist` distribution-gate runs on push of this commit.
+## Verification status of `0.1.0`
 
-It stays a prerelease. No published Marginalia version, including `0.0.45`, `0.0.46`,
-`0.0.47`, and `0.0.48`, has ever passed a real interactive Windows PowerShell 5.1 release
-lifecycle, and `0.0.50` inherits that gap unchanged. Promotion to stable waits on that
-evidence; the Linux Docker+tmux rehearsal is recorded separately below.
+`0.1.0` is designated a stable release. That designation is a decision about the
+project's maturity, not a summary of gate coverage. What was and was not run for
+this exact release:
+
+- **Source-repo GitHub Actions did not run** on `8e0e9ae2c51e6c452705548dcba5af8fd77d909c`;
+  the source org's Actions are billing-blocked.
+- **The source gates were reproduced locally** at that commit: the test suite
+  4,052 passed / 94 skipped / 1 xfailed, `ruff` clean, `uv lock --check` clean,
+  and the docs gate 47 passed.
+- **The wheel artifact gates passed against the exact published wheel** above:
+  dependency contract 17 passed, install footprint 1 passed.
+- **The Neo4j backend gate runs only in source CI**, so it did not run for this
+  release.
+- **The interactive Windows PowerShell 5.1 lifecycle rehearsal was not performed**
+  for this release. No published Marginalia version has ever passed it.
+- **The Linux Docker+tmux rehearsal has not been recorded yet** for `0.1.0`; see
+  the placeholder section below.
+
+Nothing beyond the list above was verified for `0.1.0`. Gate results recorded for
+earlier versions elsewhere in this file belong to those versions and were not
+re-run here.
 
 ## Install On macOS Or Linux
 
@@ -102,7 +113,7 @@ appears while the Marginalia home is greenfield (no vault config and no
 
 ## Install On Windows
 
-The installer resolves the `0.0.50` prerelease. There is still no retained native
+The installer resolves the `0.1.0` release. There is still no retained native
 PowerShell 5.1 lifecycle evidence for any published version, so treat this path as unverified.
 
 ```powershell
@@ -313,6 +324,20 @@ then stops cleanly. The retained pane must contain
 the individual `RELEASE_LIFECYCLE_*_OK` markers identify every required phase.
 This profile is Linux-only and does not replace the separate real interactive
 Windows PowerShell rehearsal.
+
+### v0.1.0 Linux release rehearsal — NOT YET RUN
+
+PLACEHOLDER. The Linux Docker+tmux `release-lifecycle` rehearsal for `0.1.0` runs
+immediately after this bake and has not been performed at the time of writing.
+No result is claimed for it, pass or fail.
+
+- Evidence path: TO BE FILLED IN after the run (no evidence file exists yet).
+- Evidence SHA-256: TO BE FILLED IN.
+- Driver commit: TO BE FILLED IN.
+
+Until those three lines carry real values, `0.1.0` has no Linux rehearsal
+evidence. The `0.0.50` record below is a different release's evidence and does
+not cover `0.1.0`.
 
 ### v0.0.50 Linux release rehearsal (exact driver commit)
 

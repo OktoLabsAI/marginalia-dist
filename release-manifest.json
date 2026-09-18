@@ -1,7 +1,7 @@
 {
-  "version": "0.0.50",
-  "wheel": "marginalia-0.0.50-py3-none-any.whl",
-  "wheel_url": "https://github.com/OktoLabsAI/marginalia-dist/releases/download/v0.0.50/marginalia-0.0.50-py3-none-any.whl",
-  "sha256": "cc524877686ad0227d6cd208c487f027acf1f1e25772c98afe00b96bbdf3ea1e",
-  "source_commit": "5264b971dc3e97390a25cff06b8ff0d1dcfeb04d"
+  "version": "0.1.0",
+  "wheel": "marginalia-0.1.0-py3-none-any.whl",
+  "wheel_url": "https://github.com/OktoLabsAI/marginalia-dist/releases/download/v0.1.0/marginalia-0.1.0-py3-none-any.whl",
+  "sha256": "185d787947d524f6fd7a88d120c6bbbff1d36d55348eb18d11bdf2c65bce8591",
+  "source_commit": "8e0e9ae2c51e6c452705548dcba5af8fd77d909c"
 }
