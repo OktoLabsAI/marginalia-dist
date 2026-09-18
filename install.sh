@@ -116,8 +116,12 @@ validate_preseed_inputs
 # Guarded on direct execution: the source-repo helper tests and the CI wheel
 # gate `source` the prefix of this file above the EXIT trap, passing their own
 # positional arguments. Unguarded, those paths hit the unknown-flag die.
+# The `:-$0` default is load-bearing: this script runs under `set -u` and the
+# public install path is `curl ... | bash`, where BASH_SOURCE is unset and a
+# bare ${BASH_SOURCE[0]} is a fatal unbound-variable error. Defaulting to $0
+# keeps the piped and executed paths parsing flags while sourced callers skip.
 NO_ONBOARD=""
-if [ "${BASH_SOURCE[0]}" = "$0" ]; then
+if [ "${BASH_SOURCE[0]:-$0}" = "$0" ]; then
   for arg in "$@"; do
     case "${arg}" in
       --no-onboard) NO_ONBOARD="1" ;;
