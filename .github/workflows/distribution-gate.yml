@@ -258,6 +258,7 @@ jobs:
               "0.0.48": "1242306425e4245bd4292ad24d6280e310ef8d26",
               "0.0.49": "85f2b28bd1c23c1cdc5fdf6389d7ba96862bda6b",
               "0.0.50": "5264b971dc3e97390a25cff06b8ff0d1dcfeb04d",
+              "0.1.0": "8e0e9ae2c51e6c452705548dcba5af8fd77d909c",
           }
           assert version in operator_verified_source_commits, (
               f"v{version} has no operator-verified private source tag pin"
