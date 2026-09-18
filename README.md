@@ -4,12 +4,13 @@ One-shot installer for [Marginalia](https://github.com/OktoLabsAI/marginalia), a
 local-first knowledge graph you can drive from Claude Code (MCP), the CLI, or as
 a Python library.
 
-The current release is `0.1.0`, the first version designated stable: source tag
+The current release is `0.1.0`, a prerelease: source tag
 `v0.1.0` at commit `8e0e9ae2c51e6c452705548dcba5af8fd77d909c`, wheel
 [`marginalia-0.1.0-py3-none-any.whl`](https://github.com/OktoLabsAI/marginalia-dist/releases/download/v0.1.0/marginalia-0.1.0-py3-none-any.whl),
 SHA-256 `185d787947d524f6fd7a88d120c6bbbff1d36d55348eb18d11bdf2c65bce8591`,
-1,220,770 bytes. It succeeds the `0.0.50` prerelease. Read the verification
-status below before treating "stable" as a claim about coverage.
+1,220,770 bytes. It succeeds the `0.0.50` prerelease. The Linux Docker+tmux
+release rehearsal passed for this release; the verification status below records
+what is still outstanding and why `0.1.0` is not designated stable.
 
 The release notes immediately below describe the preceding `0.0.50` and `0.0.49`
 prereleases and are kept as history from those releases.
@@ -65,9 +66,7 @@ The base-URL canonicalization below shipped in `0.0.49` and is unchanged in `0.0
 
 ## Verification status of `0.1.0`
 
-`0.1.0` is designated a stable release. That designation is a decision about the
-project's maturity, not a summary of gate coverage. What was and was not run for
-this exact release:
+`0.1.0` remains a prerelease. What was and was not run for this exact release:
 
 - **Source-repo GitHub Actions did not run** on `8e0e9ae2c51e6c452705548dcba5af8fd77d909c`;
   the source org's Actions are billing-blocked.
@@ -80,8 +79,12 @@ this exact release:
   release.
 - **The interactive Windows PowerShell 5.1 lifecycle rehearsal was not performed**
   for this release. No published Marginalia version has ever passed it.
-- **The Linux Docker+tmux rehearsal has not been recorded yet** for `0.1.0`; see
-  the placeholder section below.
+- **The Linux Docker+tmux `release-lifecycle` rehearsal passed** on 2026-09-18
+  against dist commit `a64c9e97df76cffbfd78efb695350277b000d883`; see the record
+  below.
+- **The public `distribution-gate` is GREEN** on
+  `a64c9e97df76cffbfd78efb695350277b000d883` (parity, bash-transaction,
+  powershell-syntax).
 
 Nothing beyond the list above was verified for `0.1.0`. Gate results recorded for
 earlier versions elsewhere in this file belong to those versions and were not
@@ -325,19 +328,58 @@ the individual `RELEASE_LIFECYCLE_*_OK` markers identify every required phase.
 This profile is Linux-only and does not replace the separate real interactive
 Windows PowerShell rehearsal.
 
-### v0.1.0 Linux release rehearsal — NOT YET RUN
+### v0.1.0 Linux release rehearsal (exact driver commit)
 
-PLACEHOLDER. The Linux Docker+tmux `release-lifecycle` rehearsal for `0.1.0` runs
-immediately after this bake and has not been performed at the time of writing.
-No result is claimed for it, pass or fail.
+Ran 2026-09-18. The first attempt for `0.1.0` failed: the installer's new flag
+guard used a bare `${BASH_SOURCE[0]}`, which under `set -u` aborts the
+`curl … | bash` path with an unbound-variable error. The static gates,
+`shellcheck`, and the sourced-prefix unit tests all passed while that piped
+install path was broken. The fix landed in dist
+`a64c9e97df76cffbfd78efb695350277b000d883` (mirroring source `5d9d4f7`) and the
+rehearsal was re-run green against the fixed driver.
 
-- Evidence path: TO BE FILLED IN after the run (no evidence file exists yet).
-- Evidence SHA-256: TO BE FILLED IN.
-- Driver commit: TO BE FILLED IN.
+The tester was fetched from the exact dist commit
+`a64c9e97df76cffbfd78efb695350277b000d883` (driver `test-install.sh` SHA-256
+`ce26bfc500e231f9c966cda816f0bbab6520563d691673052e0466000b3faba0`) and that same
+SHA was passed back as `--driver-commit`, so the run is pinned to a published
+commit rather than a moving branch or a local checkout. The pinned
+`install.sh` records SHA-256
+`efa2e841049efccafd607f64964efc6a88eae96c2703a3777ee840a12d930925` and
+`release-manifest.json` SHA-256
+`d6519faa2d126b3c7545eff48b98b0be23d3c31ccafaa2eac0771cadd365cb12`. `v0.1.0` in
+this repo points at that commit, which is also dist `main`. The full invocation
+was `--docker-tmux --profile release-lifecycle --driver-commit
+a64c9e97df76cffbfd78efb695350277b000d883`.
 
-Until those three lines carry real values, `0.1.0` has no Linux rehearsal
-evidence. The `0.0.50` record below is a different release's evidence and does
-not cover `0.1.0`.
+Every stage verifies the published `0.1.0` wheel SHA-256
+`185d787947d524f6fd7a88d120c6bbbff1d36d55348eb18d11bdf2c65bce8591`, matching
+`release-manifest.json`. All thirteen `RELEASE_LIFECYCLE_*_OK` markers
+(`FRESH_INSTALL`, `STATUS_UI`, `APP_FIRST`, `STOPPED_UPDATE`, `RUNNING_UPDATE`,
+`CUSTOM_PORT_REFUSAL`, `LIVE_PID_REFUSAL`, `PREVIOUS_TOOL_SENTINEL`,
+`ACTIVATION_ROLLBACK`, `PREDECESSOR_MIGRATION`, `PREDECESSOR_RUNNING`,
+`PREDECESSOR_ROLLBACK`, `FINAL_STOP`) and the final
+`DOCKER_TMUX_RELEASE_LIFECYCLE_OK` occur in one fresh Ubuntu container and one
+real tmux TTY. The run exercised a genuine upgrade path:
+`marginalia-0.0.40-py3-none-any.whl` installed first, then updated to
+`marginalia-0.1.0-py3-none-any.whl`.
+
+Retained pane evidence:
+[`evidence/v0.1.0/linux-docker-tmux-release-lifecycle.txt`](evidence/v0.1.0/linux-docker-tmux-release-lifecycle.txt),
+SHA-256 `84b8a37f48d23cf250c1b12550fce4b95b36a7f975b07fdf6e610498a27e49c7`.
+
+Only the `release-lifecycle` profile was run for `0.1.0`; the
+`greenfield-first-run` and `custom-rootform` profiles were not re-run, so their
+`0.0.49` evidence below is the most recent for those paths.
+
+The public `distribution-gate` is GREEN on
+`a64c9e97df76cffbfd78efb695350277b000d883` (parity, bash-transaction,
+powershell-syntax).
+
+This is Linux rehearsal evidence only. It does not promote `0.1.0`: the Neo4j
+backend gate runs only in source CI and therefore did not run, leaving that
+surface unverified for this release, and promotion still waits on a real
+interactive Windows PowerShell 5.1 lifecycle rehearsal, which has never passed
+for any published version. `0.1.0` remains a prerelease pending both.
 
 ### v0.0.50 Linux release rehearsal (exact driver commit)
 
