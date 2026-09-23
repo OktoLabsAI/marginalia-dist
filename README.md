@@ -4,16 +4,64 @@ One-shot installer for [Marginalia](https://github.com/OktoLabsAI/marginalia), a
 local-first knowledge graph you can drive from Claude Code (MCP), the CLI, or as
 a Python library.
 
-The current release is `0.1.0`, a prerelease: source tag
-`v0.1.0` at commit `8e0e9ae2c51e6c452705548dcba5af8fd77d909c`, wheel
-[`marginalia-0.1.0-py3-none-any.whl`](https://github.com/OktoLabsAI/marginalia-dist/releases/download/v0.1.0/marginalia-0.1.0-py3-none-any.whl),
-SHA-256 `185d787947d524f6fd7a88d120c6bbbff1d36d55348eb18d11bdf2c65bce8591`,
-1,220,770 bytes. It succeeds the `0.0.50` prerelease. The Linux Docker+tmux
-release rehearsal passed for this release; the verification status below records
-what is still outstanding and why `0.1.0` is not designated stable.
+The current release is `0.2.0`, a prerelease: source tag
+`v0.2.0` at commit `314e3af15a901c71c0bcb7af75a63f081298859f`, wheel
+[`marginalia-0.2.0-py3-none-any.whl`](https://github.com/OktoLabsAI/marginalia-dist/releases/download/v0.2.0/marginalia-0.2.0-py3-none-any.whl),
+SHA-256 `59adee4483d8f85525e30a5e6271e6328238ac275d4b3fe05e29325d2ed29520`,
+1,275,757 bytes. It succeeds the `0.1.0` prerelease. The verification status below
+records what ran for this exact release, what did not, and why `0.2.0` is not
+designated stable.
 
-The release notes immediately below describe the preceding `0.0.50` and `0.0.49`
-prereleases and are kept as history from those releases.
+`0.2.0` is a reliability release on top of the `0.1.0` agent-facing MCP surface.
+What changed since `0.1.0`:
+
+1. **ChatGPT subscription sign-in from the CLI.** `marginalia provider login chatgpt`
+   runs an interactive device-code login into Marginalia's own credential directory. It
+   refuses `~/.codex` and `~/.pi/agent` (symlinks included), a non-TTY session, and an
+   existing credential unless `--force` is given. `marginalia provider status chatgpt
+   [--json]` is a read-only report of plan, account, subscription and token expiry that
+   exits 1 when the credential is unusable.
+2. **LoCoMo benchmark harness (source repo).** `--enable-chatgpt` scopes the ChatGPT
+   opt-in to a single run, and `--ingest-concurrency` ingests several conversations at
+   once. Each conversation keeps its own vault and daemon and its documents are still
+   posted in order, so no vault's content changes.
+3. **Transient provider errors are retried** in `ask` synthesis and in every ingest judge
+   and curator step (curator, relation curator, merge judge, predicate resolution, type
+   adjudication, correction judge, predicate-propose sweep judge). Same policy extraction
+   already used: two attempts, retryable errors only, `Retry-After` capped at 60 s, and
+   every retry recorded. A single 503 used to turn an answer into empty text or silently
+   degrade the step. The reconcile cluster judge stays single-shot on purpose.
+4. **A case-variant re-mention no longer wedges a vault.** A later document naming an
+   existing entity with different capitalisation raised "node artifact differs from
+   sealed plan", the plan was never receipted, and every later `remember` replayed it and
+   failed. The sealed-plan applier now compares exactly what the node id is built from
+   (type, folded title, content).
+5. **Committing a parked manual-review item no longer wedges** when another document
+   already committed the same node. The review path shares the same id-input comparison;
+   a vault the old code wedged heals by re-running the same review resolution.
+6. **Every `remember` write failure is logged on both MCP and REST.** Real graph-write
+   failures log at ERROR with cause and traceback, caller mistakes at WARNING. REST
+   previously logged nothing. Response codes are unchanged.
+7. **`ingest_units_failed` is surfaced** in LoCoMo benchmark summaries, reports, compare
+   output and the ledger, so a run that lost units can no longer read as clean.
+8. **Neo4j backend: `DriverError` is translated** to `GraphBackendError` at every driver
+   entry point (reads, writes, wipe, `Neo4jStaging`). A closed driver used to leak out of
+   `get_node` untranslated.
+9. **The bundled web UI was rebuilt** to match its source; it had not been rebuilt since
+   `0.0.50`, so the provider panel was missing providers added in source.
+10. **Private network addresses were removed from published docs**, including the
+    README that ships as the wheel's long description.
+
+Known issue in `0.2.0`: the contract test
+`tests/store/contract/test_snapshot_concurrency.py::TestLadybugSnapshotPinnedDumpVsSwap::test_dump_never_mixes_pre_and_post_swap_rows`
+fails under load. It is a race between the two renames in the Ladybug staging commit and
+`LadybugStore.snapshot()` opening `graph.lbug` read-only. A deterministic probe that holds
+the swap between the renames reproduces it identically on `0.1.0`, so it is pre-existing
+and not a `0.2.0` regression. The owner waived it for this prerelease; it is not fixed.
+
+`0.1.0` was the agent-facing MCP surface release (five tools, `ask` policy set per call,
+per-source provenance, `synthesis_status` on every `ask`). The release notes below that
+describe the `0.0.50` and `0.0.49` prereleases are kept as history from those releases.
 
 `0.0.50` is an ingest-quality release. Defects were found by auditing actual graph
 nodes over a 76-document corpus rather than by trusting counters:
@@ -64,9 +112,52 @@ The base-URL canonicalization below shipped in `0.0.49` and is unchanged in `0.0
    a fresh install would get — previously broken root-form configs start working, and
    correctly saved `/v1` configs are unchanged.
 
-## Verification status of `0.1.0`
+## Verification status of `0.2.0`
 
-`0.1.0` remains a prerelease. What was and was not run for this exact release:
+`0.2.0` remains a prerelease. What was and was not run for this exact release:
+
+- **Source-repo GitHub Actions did not run** on `314e3af15a901c71c0bcb7af75a63f081298859f`.
+  All four workflows were triggered and every job failed within about 4 s without starting:
+  "The job was not started because recent account payments have failed or your spending
+  limit needs to be increased." Runs: `docs-gate` 35925976054, `eval-gate` 35925976076,
+  `model-free-tests` 35925976061, `release-artifact-gate` 35925976028 (its
+  `neo4j-backend-gate` job was skipped).
+- **The source gates were reproduced locally on that exact commit** on 2026-09-23:
+  - `model-free-tests / tests`: `uv lock --check`, `actionlint` and `ruff` clean; the
+    canonical CI pytest selection 1 failed / 4,440 passed / 65 skipped / 37 deselected /
+    1 xfailed, the one failure being the waived snapshot race above; `npm ci`,
+    `npm audit` (0 vulnerabilities), typecheck and build clean; no `frontend_dist`
+    drift; the docs build leaves the tree clean.
+  - `model-free-tests / acceptance`: every scenario PASS on the default grafx backend
+    (54 skipped by design on grafx), overall green.
+  - `eval-gate / floor`: gold 32/32, distractors 20/20, provenance gate pass,
+    `recall_floor` selftest PASS, regressions `[]`.
+  - `release-artifact-gate / neo4j-backend-gate`: against a live `neo4j:5-community`
+    container, the Neo4j contract tests 9 passed / 0 skipped, the CI pytest step
+    1 failed (the waived race) / 1,394 passed, acceptance scenario 84 PASS with 25
+    assertions.
+  - `release-artifact-gate / wheel`: every extra resolved in its own clean Python 3.12
+    environment, a live `[serve]` start, JSON-LD export, both CLI entry points, retired
+    constructors failing closed, grafx and neo4j init without `--accept-experimental`,
+    wheel byte scan clean.
+- **`release-artifact-gate / windows-managed-credentials` did not run.** It needs a
+  Windows runner and has no local substitute.
+- **The wheel artifact gates passed against the exact published wheel** above, built
+  from the clean tagged commit: dependency contract 17 passed, install footprint 1
+  passed, a live `marginalia serve --no-open` from the `[serve]` extra in an isolated
+  HOME with zero vaults answering `/health`, `/version` (`0.2.0`) and the SPA, and a
+  JSON-LD export through the `[jsonld]` extra.
+- **The interactive Windows PowerShell 5.1 lifecycle rehearsal was not performed**
+  for this release. No published Marginalia version has ever passed it.
+- **The Linux Docker+tmux `release-lifecycle` rehearsal** is recorded below once run.
+
+Nothing beyond the list above was verified for `0.2.0`. Gate results recorded for
+earlier versions elsewhere in this file belong to those versions and were not
+re-run here.
+
+## Verification status of `0.1.0` (history)
+
+`0.1.0` remains a prerelease. What was and was not run for that release:
 
 - **Source-repo GitHub Actions did not run** on `8e0e9ae2c51e6c452705548dcba5af8fd77d909c`;
   the source org's Actions are billing-blocked.
@@ -116,7 +207,7 @@ appears while the Marginalia home is greenfield (no vault config and no
 
 ## Install On Windows
 
-The installer resolves the `0.1.0` release. There is still no retained native
+The installer resolves the `0.2.0` release. There is still no retained native
 PowerShell 5.1 lifecycle evidence for any published version, so treat this path as unverified.
 
 ```powershell
@@ -347,7 +438,7 @@ commit rather than a moving branch or a local checkout. The pinned
 `efa2e841049efccafd607f64964efc6a88eae96c2703a3777ee840a12d930925` and
 `release-manifest.json` SHA-256
 `d6519faa2d126b3c7545eff48b98b0be23d3c31ccafaa2eac0771cadd365cb12`. `v0.1.0` in
-this repo points at that commit, which is also dist `main`. The full invocation
+this repo points at that commit, which was dist `main` at the time. The full invocation
 was `--docker-tmux --profile release-lifecycle --driver-commit
 a64c9e97df76cffbfd78efb695350277b000d883`.
 
