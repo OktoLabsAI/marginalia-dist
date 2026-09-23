@@ -149,7 +149,12 @@ The base-URL canonicalization below shipped in `0.0.49` and is unchanged in `0.0
   JSON-LD export through the `[jsonld]` extra.
 - **The interactive Windows PowerShell 5.1 lifecycle rehearsal was not performed**
   for this release. No published Marginalia version has ever passed it.
-- **The Linux Docker+tmux `release-lifecycle` rehearsal** is recorded below once run.
+- **The Linux Docker+tmux `release-lifecycle` rehearsal passed** on 2026-09-23
+  against dist commit `29683d2156840eadaff43efd6133750cd7f24465`; see the record
+  below.
+- **The public `distribution-gate` is GREEN** on
+  `29683d2156840eadaff43efd6133750cd7f24465` (run 35926619850: parity,
+  bash-transaction, powershell-syntax).
 
 Nothing beyond the list above was verified for `0.2.0`. Gate results recorded for
 earlier versions elsewhere in this file belong to those versions and were not
@@ -418,6 +423,55 @@ then stops cleanly. The retained pane must contain
 the individual `RELEASE_LIFECYCLE_*_OK` markers identify every required phase.
 This profile is Linux-only and does not replace the separate real interactive
 Windows PowerShell rehearsal.
+
+### v0.2.0 Linux release rehearsal (exact driver commit)
+
+Ran 2026-09-23. The first attempt for `0.2.0` did not reach the installer: the
+host's Docker daemon now runs in a Colima VM that does not share macOS
+`/var/folders`, so the tester's default sandbox under `$TMPDIR` bind-mounted
+`/runner.sh` into the container as an empty directory (`/runner.sh: Is a
+directory`, pane status 126). That is a host environment issue, not an installer
+or wheel defect. The rehearsal was re-run from the same pinned driver with
+`TMPDIR` set to a directory under the user's home, which Colima does share.
+
+The tester was fetched from the exact dist commit
+`29683d2156840eadaff43efd6133750cd7f24465` (driver `test-install.sh` SHA-256
+`e6e0cc1b5f2a5479b9d09e97f9e70d50a34eda53bfe3daed28a06d8abb304c6d`) and that same
+SHA was passed back as `--driver-commit`, so the run is pinned to a published
+commit rather than a moving branch or a local checkout. The pinned
+`install.sh` records SHA-256
+`a4c0f72b757bbfe54c17ee766885c84d8b89b2126fe1027df4d562f8824b15a8` and
+`release-manifest.json` SHA-256
+`22eb2f07ee453a708052469d71382a2dc47b0491ff8534d7899325f3bea8068f`. `v0.2.0` in
+this repo points at that commit. The full invocation was `--docker-tmux --profile
+release-lifecycle --driver-commit 29683d2156840eadaff43efd6133750cd7f24465`.
+
+Every stage verifies the published `0.2.0` wheel SHA-256
+`59adee4483d8f85525e30a5e6271e6328238ac275d4b3fe05e29325d2ed29520`, matching
+`release-manifest.json`. All thirteen `RELEASE_LIFECYCLE_*_OK` markers
+(`FRESH_INSTALL`, `STATUS_UI`, `APP_FIRST`, `STOPPED_UPDATE`, `RUNNING_UPDATE`,
+`CUSTOM_PORT_REFUSAL`, `LIVE_PID_REFUSAL`, `PREVIOUS_TOOL_SENTINEL`,
+`ACTIVATION_ROLLBACK`, `PREDECESSOR_MIGRATION`, `PREDECESSOR_RUNNING`,
+`PREDECESSOR_ROLLBACK`, `FINAL_STOP`) and the final
+`DOCKER_TMUX_RELEASE_LIFECYCLE_OK` occur in one fresh Ubuntu container and one
+real tmux TTY, and the pane exited with status 0. The run exercised a genuine
+upgrade path: `marginalia-0.0.40-py3-none-any.whl` installed first, then updated
+to `marginalia-0.2.0-py3-none-any.whl`.
+
+Retained pane evidence:
+[`evidence/v0.2.0/linux-docker-tmux-release-lifecycle.txt`](evidence/v0.2.0/linux-docker-tmux-release-lifecycle.txt),
+SHA-256 `1d2e1c27b93c20eed0176bf857d5ed9f240f7f27a374c833dece6fe0eb356fd1`.
+
+Only the `release-lifecycle` profile was run for `0.2.0`; the
+`greenfield-first-run` and `custom-rootform` profiles were not re-run, so their
+`0.0.49` evidence below is the most recent for those paths.
+
+This is Linux rehearsal evidence only. It does not promote `0.2.0`: source-repo
+Actions are billing-blocked so its gates were reproduced locally, the
+snapshot-concurrency race is a waived known issue, the Windows managed-credentials
+gate did not run, and promotion still waits on a real interactive Windows
+PowerShell 5.1 lifecycle rehearsal, which has never passed for any published
+version. `0.2.0` remains a prerelease.
 
 ### v0.1.0 Linux release rehearsal (exact driver commit)
 
