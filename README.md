@@ -1,5 +1,20 @@
 # Marginalia — install
 
+> **Moved to Okto Neuron.** Marginalia is now Okto Neuron:
+> [github.com/OktoLabsAI/okto-neuron](https://github.com/OktoLabsAI/okto-neuron) ·
+> [oktolabs.ai/platform/neuron/](https://oktolabs.ai/platform/neuron/)
+>
+> The one-liners in this README still work. `install.sh` and `install.ps1` here now
+> print a notice and run the Okto Neuron installer from
+> `https://raw.githubusercontent.com/OktoLabsAI/okto-neuron/main/`, which upgrades an
+> existing Marginalia install in place and honours the old `MARGINALIA_*` variables.
+> `release-manifest.json` stays pinned at `0.2.0` and is never updated again; the
+> `0.2.0` installers remain available from the `v0.2.0` tag
+> (`https://raw.githubusercontent.com/OktoLabsAI/marginalia-dist/v0.2.0/install.sh`).
+> Everything below is the historical record for Marginalia up to `0.2.0`.
+> This repository is licensed under Apache-2.0 (see `LICENSE`); Okto Neuron from
+> `0.3.0` is licensed separately (see its repository).
+
 One-shot installer for [Marginalia](https://github.com/OktoLabsAI/marginalia), a
 local-first knowledge graph you can drive from Claude Code (MCP), the CLI, or as
 a Python library.
