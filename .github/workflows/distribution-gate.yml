@@ -891,20 +891,29 @@ jobs:
           Set-Content -LiteralPath $runner -Value "Get-Content -Raw -LiteralPath '$forwarder' | Invoke-Expression"
 
           $env:MARGINALIA_LLM_PROVIDER = "skip"
-          $preseedOut = Join-Path $env:RUNNER_TEMP "forward-preseed.out"
-          & powershell -NoProfile -ExecutionPolicy Bypass -File $runner *> $preseedOut
-          $preseedCode = $LASTEXITCODE
+          # Streams go straight to files: captured with `&`, Windows PowerShell 5.1
+          # splits each stderr line into its own NativeCommandError record.
+          $preseedOut = Join-Path $env:RUNNER_TEMP "forward-preseed.stdout"
+          $preseedErr = Join-Path $env:RUNNER_TEMP "forward-preseed.stderr"
+          $preseedChild = Start-Process -FilePath powershell -Wait -PassThru -NoNewWindow `
+            -ArgumentList @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "`"$runner`"") `
+            -RedirectStandardOutput $preseedOut -RedirectStandardError $preseedErr
+          $preseedCode = $preseedChild.ExitCode
           Remove-Item Env:MARGINALIA_LLM_PROVIDER
-          $preseed = Get-Content -Raw -LiteralPath $preseedOut
+          $preseed = (Get-Content -Raw -LiteralPath $preseedOut) + (Get-Content -Raw -LiteralPath $preseedErr)
           $preseed | Out-Host
-          # Only the refusal and the forwarded env are asserted here: the Okto Neuron
-          # install.ps1 0.3.0 early-exit path does not print its own error text.
           if ($preseedCode -eq 0) { throw "forwarded installer accepted a provider preseed without a vault" }
+          # Compared without colour codes, line wrapping and pwsh 7's "|" error gutter.
+          $flatPreseed = (($preseed -replace '\x1b\[[0-9;?]*[A-Za-z]', '') -replace '\r?\n[ \t]*\|', '') -replace '\s', ''
           foreach ($needle in @(
             "Marginalia is now Okto Neuron; forwarding to the Okto Neuron installer",
-            "MARGINALIA_LLM_PROVIDER is deprecated; using it as OKTO_NEURON_LLM_PROVIDER"
+            "MARGINALIA_LLM_PROVIDER is deprecated; using it as OKTO_NEURON_LLM_PROVIDER",
+            "error: OKTO_NEURON_LLM_PROVIDER requires OKTO_NEURON_VAULT; omit preseed settings and configure vaults in the Web UI, or set OKTO_NEURON_VAULT explicitly"
           )) {
-            if (-not $preseed.Contains($needle)) { throw "missing from forwarded output: $needle" }
+            if (-not $flatPreseed.Contains(($needle -replace '\s', ''))) { throw "missing from forwarded output: $needle" }
+          }
+          foreach ($bad in @("is not recognized", "Remove-InstallerTemps", "Restore-LegacyMcp")) {
+            if ($preseed.Contains($bad)) { throw "forwarded refusal output contains '$bad'" }
           }
 
           $env:MARGINALIA_NO_SERVE = "1"
