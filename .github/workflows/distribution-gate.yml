@@ -882,6 +882,10 @@ jobs:
       - name: Forward to the real Okto Neuron installer
         shell: powershell
         run: |
+          # The child installers write to stderr; under the runner's default
+          # "Stop" preference Windows PowerShell 5.1 would turn that into a
+          # NativeCommandError here. Exit codes are checked explicitly instead.
+          $ErrorActionPreference = "Continue"
           $forwarder = Join-Path $PWD "install.ps1"
           $runner = Join-Path $env:RUNNER_TEMP "run-forwarder.ps1"
           Set-Content -LiteralPath $runner -Value "Get-Content -Raw -LiteralPath '$forwarder' | Invoke-Expression"
